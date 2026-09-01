@@ -1,0 +1,16 @@
+#! /usr/bin/env python3
+"""Diff the expanded seed package lists between two refs of a seed repo."""
+
+import sys
+
+try:
+    from germinate_diff.cli import main
+except ImportError:
+    # Running from the source tree?
+    import os
+
+    sys.path.insert(0, os.path.join(sys.path[0], os.pardir))
+    from germinate_diff.cli import main
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
