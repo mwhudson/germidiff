@@ -18,10 +18,20 @@
 import os
 
 from germidiff.listfile import Reason, parse_why
+from germidiff.diff import Diff, SeedDiff, diff_runs
 from germidiff.probe import ProbeResult, drop_alternative
-from germidiff.report import format_probes, format_retained
+from germidiff.report import (
+    PROBE_HEADER,
+    format_probe,
+    format_retained,
+)
 from germidiff.retention import Retained, find_retained, soft_edges
 from germidiff.runner import GerminateRun
+
+
+def make_run(label, seeds):
+    seeds = {n: set(p) for n, p in seeds.items()}
+    return GerminateRun(label, label, list(seeds), seeds)
 from tests.helpers import TestCase
 
 
@@ -278,26 +288,50 @@ class TestReportSections(TestCase):
 
     def test_no_section_without_findings(self):
         self.assertEqual([], format_retained([]))
-        self.assertEqual([], format_probes([]))
+        self.assertEqual([], format_probe(None, PROBE_HEADER))
 
-    def test_probe_section(self):
-        probes = [ProbeResult("dpkg-dev", "build-essential",
-                              ["g++", "build-essential"])]
-        self.assertEqual(
-            [
-                "**retention probe**",
-                "cutting dpkg-dev's Recommends of build-essential removes "
-                "2 package(s):",
-                "-build-essential",
-                "-g++",
-            ],
-            format_probes(probes),
+    def test_probe_section_shows_the_per_seed_effect(self):
+        # The union is the least interesting part: a package can leave
+        # several seeds -- and so several images -- while staying in the
+        # archive because another seed still pulls it in.
+        before = make_run(
+            "before",
+            {"server-minimal": ["curl", "pollinate"], "server": ["curl"]},
         )
+        after = make_run(
+            "after", {"server-minimal": [], "server": ["curl"]}
+        )
+        probe = ProbeResult(
+            [("ubuntu-server-minimal", "Depends", "pollinate")],
+            diff=diff_runs(before, after),
+        )
+        lines = format_probe(probe, PROBE_HEADER)
+        text = "\n".join(lines)
+        self.assertIn(PROBE_HEADER, text)
+        self.assertIn("ubuntu-server-minimal's Depends on pollinate", text)
+        self.assertIn("**server-minimal**", text)
+        self.assertIn("-curl", text)
+        self.assertIn("-pollinate", text)
+        # pollinate leaves the archive, but curl only leaves this seed: it
+        # is still pulled in by "server", so it must not appear as a global
+        # loss even though an image just lost it.
+        globally = text.split("**server-minimal**")[0]
+        self.assertIn("-pollinate", globally)
+        self.assertNotIn("-curl", globally)
 
-    def test_probe_that_removes_nothing(self):
-        probes = [ProbeResult("dpkg-dev", "build-essential", [])]
-        self.assertIn("removes nothing", "\n".join(format_probes(probes)))
+    def test_probe_that_changes_nothing(self):
+        run = make_run("x", {"base": ["a"]})
+        probe = ProbeResult(
+            [("m", "Depends", "a")], diff=diff_runs(run, run)
+        )
+        self.assertIn("nothing changes", "\n".join(
+            format_probe(probe, PROBE_HEADER)))
 
     def test_probe_error_is_reported_not_raised(self):
-        probes = [ProbeResult("a", "b", error="boom")]
-        self.assertIn("could not probe", "\n".join(format_probes(probes)))
+        probe = ProbeResult([("m", "Depends", "a")], error="boom")
+        self.assertIn(
+            "could not probe", "\n".join(format_probe(probe, PROBE_HEADER))
+        )
+
+    def test_no_probe_section_without_a_probe(self):
+        self.assertEqual([], format_probe(None, PROBE_HEADER))

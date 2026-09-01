@@ -30,6 +30,9 @@ __all__ = [
     "NO_CHANGES",
     "NO_GLOBAL_CHANGES",
     "format_diff",
+    "format_pending",
+    "format_probe",
+    "format_retained",
 ]
 
 NO_CHANGES = "No changes to any expanded package list."
@@ -41,6 +44,8 @@ NO_GLOBAL_CHANGES = "(no net change across all seeds)"
 
 RETAINED_HEADER = "**no longer seeded, still pulled in**"
 PROBE_HEADER = "**retention probe**"
+PENDING_HEADER = "**held up only by metapackages built from these seeds**"
+PENDING_PROBE_HEADER = "**effect once the metapackages are rebuilt**"
 
 _PRESENCE_LABELS = {
     NEW_SEED: " (new seed)",
@@ -147,37 +152,64 @@ def format_retained(retained):
     return lines
 
 
-def format_probes(probes):
-    """Render the results of cutting each soft edge in turn."""
-    if not probes:
+def format_pending(edges):
+    """Say which dependencies only survive until the metapackages catch up."""
+    if not edges:
         return []
-
-    lines = [PROBE_HEADER]
-    for probe in probes:
-        if probe.error is not None:
-            lines.extend(
-                _wrap(
-                    "could not probe %s's Recommends of %s: %s"
-                    % (probe.holder, probe.package, probe.error),
-                    indent="",
-                )
-            )
-            continue
-        if not probe.removed:
-            lines.append(
-                "cutting %s's Recommends of %s removes nothing; it is held "
-                "by something else too" % (probe.holder, probe.package)
-            )
-            continue
+    lines = [PENDING_HEADER]
+    for edge in edges:
         lines.append(
-            "cutting %s's Recommends of %s removes %d package(s):"
-            % (probe.holder, probe.package, len(probe.removed))
+            "! %s is still pulled in by %s, built from the %s seed"
+            % (edge.package, edge.metapackage, edge.seed)
         )
-        lines.extend("-%s" % pkg for pkg in probe.removed)
+    lines.extend(
+        _wrap(
+            "Those metapackages are generated from these seeds, so the "
+            "dependency goes when they are next rebuilt.",
+            indent="",
+        )
+    )
     return lines
 
 
-def format_diff(diff, retained=(), probes=(), whole_seed_lists=False):
+def format_probe(probe, heading):
+    """Render a probe's per-seed diff under ``heading``."""
+    if probe is None:
+        return []
+    if probe.error is not None:
+        return _wrap("could not probe: %s" % probe.error, indent="")
+
+    what = ", ".join(
+        "%s's %s on %s" % (package, field, target)
+        for package, field, target in probe.cuts[:3]
+    )
+    if len(probe.cuts) > 3:
+        what += " and %d more" % (len(probe.cuts) - 3)
+
+    lines = [heading]
+    lines.extend(_wrap("without %s:" % what, indent=""))
+    if not probe.diff.changed:
+        lines.append("nothing changes")
+        return lines
+    lines.append("")
+    sections = [_format_section(probe.diff.global_diff, NO_GLOBAL_CHANGES)]
+    for seed_diff in probe.diff.changed_seeds:
+        sections.append(_format_section(seed_diff))
+    for i, section in enumerate(sections):
+        if i:
+            lines.append("")
+        lines.extend(section)
+    return lines
+
+
+def format_diff(
+    diff,
+    retained=(),
+    probe=None,
+    pending=(),
+    pending_probe=None,
+    whole_seed_lists=False,
+):
     """Render a diff, with any retention findings, as plain text.
 
     The global section comes first, then one section per changed seed;
@@ -198,11 +230,13 @@ def format_diff(diff, retained=(), probes=(), whole_seed_lists=False):
     else:
         sections.append([NO_CHANGES])
 
-    retained_lines = format_retained(retained)
-    if retained_lines:
-        sections.append(retained_lines)
-    probe_lines = format_probes(probes)
-    if probe_lines:
-        sections.append(probe_lines)
+    for lines in (
+        format_retained(retained),
+        format_pending(pending),
+        format_probe(pending_probe, PENDING_PROBE_HEADER),
+        format_probe(probe, PROBE_HEADER),
+    ):
+        if lines:
+            sections.append(lines)
 
     return "\n\n".join("\n".join(section) for section in sections) + "\n"

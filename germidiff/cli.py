@@ -29,7 +29,8 @@ from germidiff.collection_map import (
     load_collection_map,
 )
 from germidiff.diff import diff_runs
-from germidiff.probe import ProbeError, probe_edges
+from germidiff.metapackage import pending_edges
+from germidiff.probe import ProbeError, probe_cuts
 from germidiff.report import format_diff
 from germidiff.retention import find_retained, soft_edges
 from germidiff.runner import (
@@ -173,6 +174,15 @@ def parse_args(argv=None):
         help="let germinate compute reverse dependencies; off by default "
         "because it writes a file per package and does not affect the "
         "expanded lists we diff",
+    )
+    parser.add_argument(
+        "--no-metapackage-probe",
+        dest="metapackage_probe",
+        action="store_false",
+        default=True,
+        help="do not germinate again to show what happens once metapackages "
+        "generated from these seeds are rebuilt; that probe runs by default, "
+        "but only when there is something for it to say",
     )
     parser.add_argument(
         "--probe-retention",
@@ -376,24 +386,56 @@ def run(args):
             # so this runs whether or not anything differed.
             retained = find_retained(old_out, new_out, new_run)
 
-            probes = []
-            if args.probe_retention:
-                edges = soft_edges(retained)
-                if not edges:
-                    _logger.info("nothing to probe: no soft retention found")
-                else:
-                    # Must happen before the worktrees go away.
+            # A dependency from a metapackage this collection generates is
+            # only as old as the last ubuntu-meta upload, so it can mask the
+            # change entirely until those are rebuilt.
+            pending = pending_edges(
+                old_out, new_out, new_run.seed_names, retained
+            )
+
+            probe = None
+            pending_probe = None
+            if args.probe_retention or (
+                pending and args.metapackage_probe
+            ):
+                baseline = new_run.union(exclude_extra=True)
+                # Must happen before the worktrees go away.
+                if pending and args.metapackage_probe:
                     try:
-                        probes = probe_edges(
-                            edges,
+                        pending_probe = probe_cuts(
+                            [
+                                (edge.metapackage, "Depends", edge.package)
+                                for edge in pending
+                            ],
                             new_seed_base,
                             seed_dist,
                             apt_config,
                             args.arch,
-                            baseline=new_run.union(exclude_extra=True),
+                            baseline=baseline,
                         )
                     except ProbeError as e:
                         _logger.warning("%s", e)
+                if args.probe_retention:
+                    cuts = [
+                        (holder, "Recommends", package)
+                        for holder, package in soft_edges(retained)
+                    ]
+                    if not cuts:
+                        _logger.info(
+                            "nothing to probe: no soft retention found"
+                        )
+                    else:
+                        try:
+                            probe = probe_cuts(
+                                cuts,
+                                new_seed_base,
+                                seed_dist,
+                                apt_config,
+                                args.arch,
+                                baseline=baseline,
+                            )
+                        except ProbeError as e:
+                            _logger.warning("%s", e)
     finally:
         if remove_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -403,7 +445,9 @@ def run(args):
     return format_diff(
         diff_runs(old_run, new_run),
         retained=retained,
-        probes=probes,
+        probe=probe,
+        pending=pending,
+        pending_probe=pending_probe,
         whole_seed_lists=args.whole_seed_lists,
     )
 

@@ -96,6 +96,59 @@ out loud" is a set difference over data both runs already produced — typically
 a handful of packages rather than the whole closure — and the reason comes
 from germinate's own `Why` column.
 
+### Metapackage lag
+
+A seed change does not reach the archive on its own. `ubuntu-meta` and its
+siblings are built by `germinate-update-metapackage`, which sets each
+metapackage's `Depends` from the explicit entries of the seed it stands for
+(and of any seed in that seed's `Task-Seeds:` header). Those metapackages then
+sit in the archive that the *next* germination reads.
+
+So dropping a seed entry often looks like nothing happened — the package is
+still pulled in, by a metapackage built from the previous state of these very
+seeds. germidiff spots that and says so:
+
+```
+**held up only by metapackages built from these seeds**
+! pollinate is still pulled in by ubuntu-server-minimal, built from the server-minimal seed
+```
+
+It is not a guess. A holder counts only when it is named by the seed's
+`Task-Metapackage:` header, or its name ends in `-<seed>` *and* it is itself an
+explicit entry of that seed; and only when the package was in that seed's
+entries before the change and is not after — which is exactly the condition
+under which regeneration drops the dependency.
+
+Having found those, germidiff germinates once more without them, to show what
+the change will really do. This runs by default, but only when there is
+something for it to say; `--no-metapackage-probe` turns it off.
+
+**The per-seed part is the point.** A package can leave several seeds — and so
+several images — while staying in the archive because some other seed still
+pulls it in. Removing `pollinate` from two seeds looked like a no-op globally,
+and was not:
+
+```
+**effect once the metapackages are rebuilt**
+
+**global**
+-pollinate
+
+**cloud-minimal**
+-curl
+-libcurl4t64
+...
+
+**server-minimal**
+-curl
+-libcurl4t64
+...
+```
+
+`curl` never leaves the archive — `server` and `cloud-image` still pull it in —
+so the global section says only `-pollinate`. But it leaves `cloud-minimal` and
+`server-minimal`, which is to say it leaves those images.
+
 ### Probing it
 
 Germinate records only *one* reason per package, so a `!` line is a strong

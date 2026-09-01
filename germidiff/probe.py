@@ -32,10 +32,13 @@ is enough, and no private state is touched.
 import logging
 from contextlib import contextmanager
 
+from germidiff.diff import diff_runs
+from germidiff.runner import GerminateRun
+
 __all__ = [
     "ProbeError",
     "ProbeResult",
-    "probe_edges",
+    "probe_cuts",
 ]
 
 _logger = logging.getLogger("germidiff")
@@ -46,13 +49,18 @@ class ProbeError(Exception):
 
 
 class ProbeResult:
-    """What cutting one ``holder`` -> ``package`` Recommends did."""
+    """What cutting a set of dependencies did, per seed.
 
-    def __init__(self, holder, package, removed=(), error=None):
-        self.holder = holder
-        self.package = package
-        #: Packages that left the seeds' expanded lists, sorted.
-        self.removed = sorted(removed)
+    ``diff`` is the full per-seed comparison against the run being explained.
+    The global union is the least interesting part of it: a package can leave
+    several seeds -- and so several images -- while staying in the archive
+    because some other seed still pulls it in.
+    """
+
+    def __init__(self, cuts, diff=None, error=None):
+        #: The (metapackage-or-holder, field, package) edges that were cut.
+        self.cuts = list(cuts)
+        self.diff = diff
         self.error = error
 
 
@@ -93,11 +101,15 @@ def _as_dict(section):
         return {key: section[key] for key in section.keys()}
 
 
-def _cutting_archive(inner, holder, target):
-    """Wrap an Archive, rewriting one package's Recommends as it streams."""
+def _cutting_archive(inner, cuts):
+    """Wrap an Archive, dropping dependencies from it as it streams.
+
+    ``cuts`` maps a package name to a list of ``(field, target)`` pairs to
+    remove from it.
+    """
     from germinate.archive import Archive, IndexType
 
-    class CutRecommends(Archive):
+    class Cutting(Archive):
         def sections(self):
             for index_type, section in inner.sections():
                 if index_type == IndexType.PACKAGES:
@@ -105,14 +117,15 @@ def _cutting_archive(inner, holder, target):
                         name = section["Package"]
                     except (KeyError, TypeError):
                         name = None
-                    if name == holder:
+                    if name in cuts:
                         section = _as_dict(section)
-                        section["Recommends"] = drop_alternative(
-                            section.get("Recommends", ""), target
-                        )
+                        for field, target in cuts[name]:
+                            section[field] = drop_alternative(
+                                section.get(field, ""), target
+                            )
                 yield index_type, section
 
-    return CutRecommends()
+    return Cutting()
 
 
 @contextmanager
@@ -152,16 +165,16 @@ def _abi_tag(arch):
         return arch
 
 
-def _germinate(seed_base, seed_dist, apt_config, arch, cut=None):
-    """Germinate in-process and return the union of the seeds' full lists."""
+def _germinate(seed_base, seed_dist, apt_config, arch, cuts=None):
+    """Germinate in-process, returning a run's per-seed expanded lists."""
     from germinate.archive import AptArchive
     from germinate.germinator import Germinator
     from germinate.seeds import Seed, SeedError, SeedStructure
 
     germinator = Germinator(_abi_tag(arch))
     archive = AptArchive(apt_config)
-    if cut is not None:
-        archive = _cutting_archive(archive, *cut)
+    if cuts:
+        archive = _cutting_archive(archive, cuts)
     germinator.parse_archive(archive)
 
     structure = SeedStructure(seed_dist, [seed_base], None)
@@ -180,22 +193,29 @@ def _germinate(seed_base, seed_dist, apt_config, arch, cut=None):
     germinator.grow(structure)
     germinator.add_extras(structure)
 
-    union = set()
-    for name in structure.names:
-        union |= germinator.get_full(structure, name)
-    return union
+    seeds = {
+        name: set(germinator.get_full(structure, name))
+        for name in structure.names
+    }
+    return GerminateRun("probe", None, list(structure.names), seeds)
 
 
-def probe_edges(edges, seed_base, seed_dist, apt_config, arch, baseline=None):
-    """Cut each ``(holder, package)`` Recommends in turn and report the loss.
+def probe_cuts(
+    cuts, seed_base, seed_dist, apt_config, arch, baseline=None
+):
+    """Germinate again without ``cuts``, and diff the result per seed.
 
-    ``baseline`` is the union of the new run's expanded lists, used only to
-    check that germinating in-process reproduces what the command-line run
-    produced; a mismatch means the importable germinate is not the one that
-    was run, and makes the probe's numbers untrustworthy.
+    ``cuts`` is a sequence of ``(package, field, target)`` triples naming
+    dependencies to remove.  They are cut together rather than one at a
+    time, so the answer describes one coherent world rather than a series of
+    unrelated hypotheticals.
+
+    ``baseline`` is the run being explained; germinating in-process must
+    reproduce it, or the comparison would be against a different germination
+    and its numbers would not mean what they appear to.
     """
-    if not edges:
-        return []
+    if not cuts:
+        return None
 
     try:
         import germinate.archive  # noqa: F401
@@ -206,14 +226,14 @@ def probe_edges(edges, seed_base, seed_dist, apt_config, arch, baseline=None):
             "(%s)" % e
         )
 
-    _logger.info("probing: germinating %d more time(s)", len(edges) + 1)
+    _logger.info("probing: germinating twice more")
     with _quiet_germinate():
         try:
             reference = _germinate(seed_base, seed_dist, apt_config, arch)
         except Exception as e:
             raise ProbeError("could not germinate in-process: %s" % e)
 
-    if baseline is not None and reference != baseline:
+    if baseline is not None and reference.union() != baseline:
         # Without this the probe would answer a question about a different
         # germination than the one being reported, which is worse than
         # answering none: usually it means the importable germinate is not
@@ -222,22 +242,19 @@ def probe_edges(edges, seed_base, seed_dist, apt_config, arch, baseline=None):
             "germinating in-process does not reproduce the run being "
             "explained (%d packages against %d); the importable germinate "
             "is probably not the one --germinate ran"
-            % (len(reference), len(baseline))
+            % (len(reference.union()), len(baseline))
         )
 
-    results = []
+    by_package = {}
+    for package, field, target in cuts:
+        by_package.setdefault(package, []).append((field, target))
+
     with _quiet_germinate():
-        for holder, package in edges:
-            try:
-                cut = _germinate(
-                    seed_base,
-                    seed_dist,
-                    apt_config,
-                    arch,
-                    cut=(holder, package),
-                )
-            except Exception as e:
-                results.append(ProbeResult(holder, package, error=str(e)))
-                continue
-            results.append(ProbeResult(holder, package, reference - cut))
-    return results
+        try:
+            after = _germinate(
+                seed_base, seed_dist, apt_config, arch, cuts=by_package
+            )
+        except Exception as e:
+            return ProbeResult(cuts, error=str(e))
+
+    return ProbeResult(cuts, diff=diff_runs(reference, after))
