@@ -57,10 +57,12 @@ class ProbeResult:
     because some other seed still pulls it in.
     """
 
-    def __init__(self, cuts, diff=None, error=None):
-        #: The (metapackage-or-holder, field, package) edges that were cut.
+    def __init__(self, cuts, diff=None, after=None, error=None):
+        #: The (holder, field, package) dependencies that were cut.
         self.cuts = list(cuts)
         self.diff = diff
+        #: The run without those dependencies, for diffing against directly.
+        self.after = after
         self.error = error
 
 
@@ -257,4 +259,4 @@ def probe_cuts(
         except Exception as e:
             return ProbeResult(cuts, error=str(e))
 
-    return ProbeResult(cuts, diff=diff_runs(reference, after))
+    return ProbeResult(cuts, diff=diff_runs(reference, after), after=after)

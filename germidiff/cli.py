@@ -32,7 +32,11 @@ from germidiff.diff import diff_runs
 from germidiff.metapackage import pending_edges
 from germidiff.probe import ProbeError, probe_cuts
 from germidiff.report import format_diff
-from germidiff.retention import find_retained, soft_edges
+from germidiff.retention import (
+    find_retained,
+    soft_edges,
+    without_edges,
+)
 from germidiff.runner import (
     GerminateError,
     apt_config_for_chdist,
@@ -384,29 +388,74 @@ def run(args):
             # A change can leave every expanded list alone and still make a
             # package's presence rest on something nobody promised to keep,
             # so this runs whether or not anything differed.
+            # A dependency from a metapackage this collection generates
+            # is only as old as the last ubuntu-meta upload, so it can hide
+            # the change completely until those are rebuilt.  Where that is
+            # happening, germinate the new side again without those
+            # dependencies and diff against that instead: one diff that says
+            # what the change does, rather than one that says what it does
+            # not do yet.
             retained = find_retained(old_out, new_out, new_run)
-
-            # A dependency from a metapackage this collection generates is
-            # only as old as the last ubuntu-meta upload, so it can mask the
-            # change entirely until those are rebuilt.
-            pending = pending_edges(
+            metapackages = pending_edges(
                 old_out, new_out, new_run.seed_names, retained
             )
 
+            baseline = new_run.union(exclude_extra=True)
+            if metapackages and args.metapackage_probe:
+                try:
+                    rebuilt = probe_cuts(
+                        [
+                            (edge.metapackage, "Depends", edge.package)
+                            for edge in metapackages
+                        ],
+                        new_seed_base,
+                        seed_dist,
+                        apt_config,
+                        args.arch,
+                        baseline=baseline,
+                    )
+                except ProbeError as e:
+                    _logger.warning(
+                        "%s; reporting the archive as it stands instead", e
+                    )
+                    metapackages = []
+                else:
+                    if rebuilt.error is not None:
+                        _logger.warning(
+                            "could not germinate without those "
+                            "dependencies: %s", rebuilt.error
+                        )
+                        metapackages = []
+                    else:
+                        new_run = rebuilt.after
+                        retained = without_edges(
+                            find_retained(old_out, new_out, new_run),
+                            metapackages,
+                        )
+            elif metapackages:
+                # Asked not to, so say what is being taken at face value.
+                for edge in metapackages:
+                    _logger.warning(
+                        "%s is held by %s, which is built from the %s seed "
+                        "and will drop it when rebuilt",
+                        edge.package,
+                        edge.metapackage,
+                        edge.seed,
+                    )
+                metapackages = []
+
             probe = None
-            pending_probe = None
-            if args.probe_retention or (
-                pending and args.metapackage_probe
-            ):
-                baseline = new_run.union(exclude_extra=True)
-                # Must happen before the worktrees go away.
-                if pending and args.metapackage_probe:
+            if args.probe_retention:
+                cuts = [
+                    (holder, "Recommends", package)
+                    for holder, package in soft_edges(retained)
+                ]
+                if not cuts:
+                    _logger.info("nothing to probe: no soft retention found")
+                else:
                     try:
-                        pending_probe = probe_cuts(
-                            [
-                                (edge.metapackage, "Depends", edge.package)
-                                for edge in pending
-                            ],
+                        probe = probe_cuts(
+                            cuts,
                             new_seed_base,
                             seed_dist,
                             apt_config,
@@ -415,27 +464,6 @@ def run(args):
                         )
                     except ProbeError as e:
                         _logger.warning("%s", e)
-                if args.probe_retention:
-                    cuts = [
-                        (holder, "Recommends", package)
-                        for holder, package in soft_edges(retained)
-                    ]
-                    if not cuts:
-                        _logger.info(
-                            "nothing to probe: no soft retention found"
-                        )
-                    else:
-                        try:
-                            probe = probe_cuts(
-                                cuts,
-                                new_seed_base,
-                                seed_dist,
-                                apt_config,
-                                args.arch,
-                                baseline=baseline,
-                            )
-                        except ProbeError as e:
-                            _logger.warning("%s", e)
     finally:
         if remove_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -446,8 +474,7 @@ def run(args):
         diff_runs(old_run, new_run),
         retained=retained,
         probe=probe,
-        pending=pending,
-        pending_probe=pending_probe,
+        metapackages=metapackages,
         whole_seed_lists=args.whole_seed_lists,
     )
 

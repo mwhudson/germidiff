@@ -119,35 +119,27 @@ explicit entry of that seed; and only when the package was in that seed's
 entries before the change and is not after — which is exactly the condition
 under which regeneration drops the dependency.
 
-Having found those, germidiff germinates once more without them, to show what
-the change will really do. This runs by default, but only when there is
-something for it to say; `--no-metapackage-probe` turns it off.
-
-**The per-seed part is the point.** A package can leave several seeds — and so
-several images — while staying in the archive because some other seed still
-pulls it in. Removing `pollinate` from two seeds looked like a no-op globally,
-and was not:
+Having found those, germidiff germinates the new side again without them, and
+diffs against *that* — so there is one diff, saying what the change does rather
+than what it does not do yet. A note above it says what was assumed:
 
 ```
-**effect once the metapackages are rebuilt**
+**assuming the metapackages are rebuilt**
+pollinate dropped from ubuntu-cloud-minimal, ubuntu-server,
+ubuntu-server-minimal, which are built from these seeds
 
 **global**
 -pollinate
 
-**cloud-minimal**
--curl
--libcurl4t64
-...
-
-**server-minimal**
+**server-cloud-minimal**
 -curl
 -libcurl4t64
 ...
 ```
 
-`curl` never leaves the archive — `server` and `cloud-image` still pull it in —
-so the global section says only `-pollinate`. But it leaves `cloud-minimal` and
-`server-minimal`, which is to say it leaves those images.
+This runs by default, but only when there is something for it to say;
+`--no-metapackage-probe` turns it off and reports the archive as it stands,
+warning about each dependency being taken at face value.
 
 ### Probing it
 

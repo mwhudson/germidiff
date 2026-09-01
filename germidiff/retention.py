@@ -36,6 +36,7 @@ __all__ = [
     "Retained",
     "find_retained",
     "soft_edges",
+    "without_edges",
 ]
 
 
@@ -150,3 +151,26 @@ def soft_edges(retained):
             if edge not in edges:
                 edges.append(edge)
     return sorted(edges)
+
+
+def without_edges(retained, edges):
+    """Drop reasons that a set of pending edges accounts for.
+
+    Once a dependency is taken as gone -- a metapackage's, say, because the
+    metapackage is about to be rebuilt -- it is no longer a reason the
+    package is still here.  A package left with no other reason is not
+    retained at all, and drops out.
+    """
+    dropped = {(edge.metapackage, edge.package) for edge in edges}
+    if not dropped:
+        return retained
+    kept = []
+    for entry in retained:
+        reasons = [
+            reason
+            for reason in entry.reasons
+            if (reason.holder, entry.package) not in dropped
+        ]
+        if reasons:
+            kept.append(Retained(entry.package, reasons, entry.seeds))
+    return kept

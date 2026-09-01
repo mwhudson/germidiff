@@ -30,7 +30,7 @@ __all__ = [
     "NO_CHANGES",
     "NO_GLOBAL_CHANGES",
     "format_diff",
-    "format_pending",
+    "format_metapackages",
     "format_probe",
     "format_retained",
 ]
@@ -44,8 +44,7 @@ NO_GLOBAL_CHANGES = "(no net change across all seeds)"
 
 RETAINED_HEADER = "**no longer seeded, still pulled in**"
 PROBE_HEADER = "**retention probe**"
-PENDING_HEADER = "**held up only by metapackages built from these seeds**"
-PENDING_PROBE_HEADER = "**effect once the metapackages are rebuilt**"
+METAPACKAGE_HEADER = "**assuming the metapackages are rebuilt**"
 
 _PRESENCE_LABELS = {
     NEW_SEED: " (new seed)",
@@ -152,23 +151,27 @@ def format_retained(retained):
     return lines
 
 
-def format_pending(edges):
-    """Say which dependencies only survive until the metapackages catch up."""
+def format_metapackages(edges):
+    """Explain the metapackage rebuild the diff below has assumed.
+
+    Without this the diff is unreadable: it shows packages leaving seeds for
+    no visible reason, because the reason is an upload that has not happened
+    yet.
+    """
     if not edges:
         return []
-    lines = [PENDING_HEADER]
+    by_package = {}
     for edge in edges:
-        lines.append(
-            "! %s is still pulled in by %s, built from the %s seed"
-            % (edge.package, edge.metapackage, edge.seed)
+        by_package.setdefault(edge.package, []).append(edge.metapackage)
+    lines = [METAPACKAGE_HEADER]
+    for package, metapackages in sorted(by_package.items()):
+        lines.extend(
+            _wrap(
+                "%s dropped from %s, which are built from these seeds"
+                % (package, ", ".join(sorted(set(metapackages)))),
+                indent="",
+            )
         )
-    lines.extend(
-        _wrap(
-            "Those metapackages are generated from these seeds, so the "
-            "dependency goes when they are next rebuilt.",
-            indent="",
-        )
-    )
     return lines
 
 
@@ -206,8 +209,7 @@ def format_diff(
     diff,
     retained=(),
     probe=None,
-    pending=(),
-    pending_probe=None,
+    metapackages=(),
     whole_seed_lists=False,
 ):
     """Render a diff, with any retention findings, as plain text.
@@ -221,6 +223,9 @@ def format_diff(
     show.  The returned string ends with a newline.
     """
     sections = []
+    metapackage_lines = format_metapackages(metapackages)
+    if metapackage_lines:
+        sections.append(metapackage_lines)
     if diff.changed:
         sections.append(_format_section(diff.global_diff, NO_GLOBAL_CHANGES))
         for seed_diff in diff.changed_seeds:
@@ -232,8 +237,6 @@ def format_diff(
 
     for lines in (
         format_retained(retained),
-        format_pending(pending),
-        format_probe(pending_probe, PENDING_PROBE_HEADER),
         format_probe(probe, PROBE_HEADER),
     ):
         if lines:
