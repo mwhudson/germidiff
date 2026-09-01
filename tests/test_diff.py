@@ -145,3 +145,60 @@ class TestDiffRuns(TestCase):
             ["base", "desktop", "server", "gone"],
             [seed.name for seed in diff.seeds],
         )
+
+
+class TestSeedContents(TestCase):
+    """What a seed contains, as against what it newly accounts for."""
+
+    def make_run(self, label, seeds, inherit):
+        seeds = {name: set(pkgs) for name, pkgs in seeds.items()}
+        return GerminateRun(
+            label, label, list(seeds), seeds, inherit=inherit
+        )
+
+    def test_a_seed_loses_something_from_a_seed_it_inherits(self):
+        # curl leaves the shared parent, so it leaves both children's
+        # contents without appearing in either child's own section.
+        inherit = {"parent": [], "child": ["parent"]}
+        old = self.make_run(
+            "old", {"parent": ["curl", "libc"], "child": []}, inherit
+        )
+        new = self.make_run("new", {"parent": ["libc"], "child": []}, inherit)
+        diff = diff_runs(old, new)
+        contents = {c.name: c for c in diff.contents}
+        self.assertIn("child", contents)
+        self.assertEqual(["curl"], contents["child"].lost)
+
+    def test_not_repeated_when_the_seed_s_own_section_says_it(self):
+        inherit = {"solo": []}
+        old = self.make_run("old", {"solo": ["curl"]}, inherit)
+        new = self.make_run("new", {"solo": []}, inherit)
+        diff = diff_runs(old, new)
+        self.assertEqual([], [c.name for c in diff.contents])
+
+    def test_a_package_moving_to_a_child_leaves_contents_unchanged(self):
+        # Moving between a parent and its child changes both sections but
+        # neither seed's contents, so nothing is reported here.
+        inherit = {"parent": [], "child": ["parent"]}
+        old = self.make_run(
+            "old", {"parent": ["curl"], "child": []}, inherit
+        )
+        new = self.make_run(
+            "new", {"parent": [], "child": ["curl"]}, inherit
+        )
+        diff = diff_runs(old, new)
+        self.assertEqual([], [c.name for c in diff.contents])
+        # The parent did lose it from its own contents, though.
+        self.assertEqual(["curl"], self.by_name(diff)["parent"].removed)
+
+    def by_name(self, diff):
+        return {seed.name: seed for seed in diff.seeds}
+
+    def test_added_and_removed_seeds_are_left_to_their_labels(self):
+        inherit = {"base": [], "fresh": ["base"]}
+        old = self.make_run("old", {"base": ["libc"]}, {"base": []})
+        new = self.make_run(
+            "new", {"base": ["libc"], "fresh": ["nginx"]}, inherit
+        )
+        diff = diff_runs(old, new)
+        self.assertEqual([], [c.name for c in diff.contents])

@@ -23,6 +23,8 @@ import subprocess
 from germidiff.collection_map import validate_entry
 from germidiff.structure import (
     StructureError,
+    inherited_seeds,
+    parse_inheritance,
     required_branches,
     seed_names_from_structure_output,
 )
@@ -320,13 +322,28 @@ def resolve_dependencies(
 class GerminateRun:
     """The result of one germinate run: expanded package lists per seed."""
 
-    def __init__(self, label, ref, seed_names, seeds):
+    def __init__(self, label, ref, seed_names, seeds, inherit=None):
         self.label = label
         self.ref = ref
         #: Seed names in germinate's inheritance order.
         self.seed_names = seed_names
-        #: Seed name to the set of packages in its expanded list.
+        #: Seed name to the set of packages in its expanded list.  Germinate
+        #: lists a package only in the seed that first pulls it in, so this
+        #: is what a seed newly accounts for, not what it contains.
         self.seeds = seeds
+        #: Seed name to every seed it inherits from, nearest last.
+        self.inherit = inherit or {}
+
+    def inclusive(self, name):
+        """Everything a seed contains, its inherited seeds included.
+
+        This is what an image built from the seed would have, as against
+        :attr:`seeds`, which holds only what the seed itself accounts for.
+        """
+        packages = set(self.seeds.get(name, ()))
+        for inherited in self.inherit.get(name, ()):
+            packages |= self.seeds.get(inherited, set())
+        return packages
 
     def union(self, exclude_extra=False):
         """The union of every seed's expanded package list.
@@ -383,7 +400,8 @@ def read_run_output(out_dir, label, ref, include_extra=False):
     seeds = {}
     for seedname in seed_names:
         seeds[seedname] = _read_seed_json(out_dir, seedname)
-    return GerminateRun(label, ref, seed_names, seeds)
+    inherit = inherited_seeds(parse_inheritance(structure_path))
+    return GerminateRun(label, ref, seed_names, seeds, inherit=inherit)
 
 
 def germinate_command(

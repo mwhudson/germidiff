@@ -28,6 +28,8 @@ import os
 
 __all__ = [
     "StructureError",
+    "inherited_seeds",
+    "parse_inheritance",
     "parse_structure",
     "required_branches",
     "seed_names_from_structure_output",
@@ -109,3 +111,50 @@ def seed_names_from_structure_output(path):
     """
     seed_order, _ = parse_structure(path)
     return seed_order
+
+
+def parse_inheritance(path):
+    """Read ``seed: parents`` lines into a mapping of direct parents."""
+    inherit = {}
+    try:
+        with open(path, encoding="UTF-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError as e:
+        raise StructureError("could not read %s: %s" % (path, e))
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        words = line.split()
+        if words[0].endswith(":"):
+            inherit[words[0][:-1]] = list(words[1:])
+    return inherit
+
+
+def inherited_seeds(inherit):
+    """Expand direct parents into every seed each one inherits from.
+
+    Germinate lists a package only in the seed that first pulls it in, so
+    what a seed *contains* -- what an image built from it would have -- is
+    its own list plus those of everything above it.
+    """
+    expanded = {}
+
+    def walk(seed, seen):
+        if seed in expanded:
+            return expanded[seed]
+        if seed in seen:
+            return []
+        seen = seen | {seed}
+        order = []
+        for parent in inherit.get(seed, []):
+            for ancestor in walk(parent, seen) + [parent]:
+                if ancestor not in order:
+                    order.append(ancestor)
+        expanded[seed] = order
+        return order
+
+    for seed in inherit:
+        walk(seed, set())
+    return expanded

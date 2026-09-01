@@ -199,7 +199,15 @@ def _germinate(seed_base, seed_dist, apt_config, arch, cuts=None):
         name: set(germinator.get_full(structure, name))
         for name in structure.names
     }
-    return GerminateRun("probe", None, list(structure.names), seeds)
+    # inner_seeds is germinate's own expansion, and includes the seed
+    # itself; GerminateRun.inherit holds only what a seed inherits.
+    inherit = {
+        name: [s for s in structure.inner_seeds(name) if s != name]
+        for name in structure.names
+    }
+    return GerminateRun(
+        "probe", None, list(structure.names), seeds, inherit=inherit
+    )
 
 
 def probe_cuts(

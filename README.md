@@ -51,8 +51,32 @@ one line, not 62. So the section leads with the packages that genuinely
 entered or left the archive — the ones that also appear under `global` — and
 counts the rest. `--whole-seed-lists` restores the full listing.
 
-Last comes the retention check, described below, which reports packages the
-change stopped seeding but did not actually remove.
+Between the two comes a section for seeds affected only through what they
+inherit, described below, and last the retention check, which reports packages
+the change stopped seeding but did not actually remove.
+
+### What a seed contains, as against what it accounts for
+
+Germinate lists a package only in the seed that *first* pulls it in, so a
+seed's section says what it newly accounts for, not what it holds. A seed can
+therefore lose a package by losing it from something it inherits, without that
+showing anywhere in its own section — and "would an image built from this seed
+still have curl?" is not a question the per-seed sections answer.
+
+So a further section reports what each seed *contains*, its inherited seeds
+included:
+
+```
+**seeds affected through what they inherit**
+cloud-minimal loses curl, libbrotli1, libcurl4t64, libldap-common, ...
+server-minimal loses curl, libbrotli1, libcurl4t64, libldap-common, ...
+server-ship-live loses curl, pollinate, xxd
+```
+
+Only seeds whose contents change differently from their own section appear
+here; otherwise it would repeat the section below it. A seed the change added
+or removed never appears, since it gains or loses everything it inherits by
+definition and its label already says so.
 
 Exit status is 0 whenever both germinate runs succeeded, whether or not any
 differences were found, and nonzero if germinate or the tool itself failed.

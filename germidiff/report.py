@@ -30,6 +30,7 @@ __all__ = [
     "NO_CHANGES",
     "NO_GLOBAL_CHANGES",
     "format_diff",
+    "format_contents",
     "format_metapackages",
     "format_probe",
     "format_retained",
@@ -45,6 +46,7 @@ NO_GLOBAL_CHANGES = "(no net change across all seeds)"
 RETAINED_HEADER = "**no longer seeded, still pulled in**"
 PROBE_HEADER = "**retention probe**"
 METAPACKAGE_HEADER = "**assuming the metapackages are rebuilt**"
+CONTENTS_HEADER = "**seeds affected through what they inherit**"
 
 _PRESENCE_LABELS = {
     NEW_SEED: " (new seed)",
@@ -114,8 +116,15 @@ def _join_holders(holders):
 
 
 def _wrap(text, indent="  "):
+    # Package names are full of hyphens and must survive wrapping intact:
+    # "ubuntu-\nserver-minimal" is not a name anyone can grep for.
     return textwrap.wrap(
-        text, width=_WRAP, initial_indent=indent, subsequent_indent=indent
+        text,
+        width=_WRAP,
+        initial_indent=indent,
+        subsequent_indent=indent,
+        break_on_hyphens=False,
+        break_long_words=False,
     ) or [indent + text]
 
 
@@ -148,6 +157,30 @@ def format_retained(retained):
                 _wrap("all %d held by hard dependencies: %s"
                       % (len(hard), names), indent="")
             )
+    return lines
+
+
+def format_contents(contents):
+    """Say what each seed's contents gained and lost.
+
+    The per-seed sections below say what each seed newly accounts for, which
+    is not the same as what it holds: germinate lists a package only in the
+    seed that first pulls it in, so a seed can lose something by losing it
+    from a seed it inherits, without that showing in its own section.  Only
+    those seeds appear here.
+    """
+    if not contents:
+        return []
+    lines = [CONTENTS_HEADER]
+    for entry in contents:
+        for verb, packages in (("loses", entry.lost), ("gains", entry.gained)):
+            if packages:
+                lines.extend(
+                    _wrap(
+                        "%s %s %s" % (entry.name, verb, ", ".join(packages)),
+                        indent="",
+                    )
+                )
     return lines
 
 
@@ -228,6 +261,9 @@ def format_diff(
         sections.append(metapackage_lines)
     if diff.changed:
         sections.append(_format_section(diff.global_diff, NO_GLOBAL_CHANGES))
+        contents_lines = format_contents(diff.contents)
+        if contents_lines:
+            sections.append(contents_lines)
         for seed_diff in diff.changed_seeds:
             sections.append(
                 _format_section(seed_diff, whole_lists=whole_seed_lists)

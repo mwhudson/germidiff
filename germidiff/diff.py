@@ -15,7 +15,7 @@
 # along with germidiff; see the file COPYING.  If not, see
 # <https://www.gnu.org/licenses/>.
 
-__all__ = ["SeedDiff", "Diff", "diff_runs"]
+__all__ = ["SeedDiff", "SeedContents", "Diff", "diff_runs"]
 
 #: A seed present in both runs.
 UNCHANGED_PRESENCE = None
@@ -82,13 +82,38 @@ class SeedDiff:
         )
 
 
+class SeedContents:
+    """The change to what a seed *contains*, inherited seeds included.
+
+    The per-seed diffs say what each seed newly accounts for, since germinate
+    lists a package only in the seed that first pulls it in.  That answers
+    "which seed is this package here for", but not "would an image built from
+    this seed still have it" -- a package can leave a seed's contents by
+    leaving something it inherits, without appearing in its own diff at all.
+
+    Only reported where the two differ; otherwise the seed's own section has
+    already said it.
+    """
+
+    def __init__(self, name, lost, gained):
+        self.name = name
+        self.lost = sorted(lost)
+        self.gained = sorted(gained)
+
+    @property
+    def changed(self):
+        return bool(self.lost or self.gained)
+
+
 class Diff:
     """A whole comparison: the global diff plus the per-seed diffs."""
 
-    def __init__(self, global_diff, seeds):
+    def __init__(self, global_diff, seeds, contents=()):
         self.global_diff = global_diff
         #: Every seed's diff, in report order, changed or not.
         self.seeds = seeds
+        #: What each seed contains, for the seeds where that changed.
+        self.contents = list(contents)
 
     @property
     def changed_seeds(self):
@@ -96,7 +121,9 @@ class Diff:
 
     @property
     def changed(self):
-        return bool(self.global_diff.changed or self.changed_seeds)
+        return bool(
+            self.global_diff.changed or self.changed_seeds or self.contents
+        )
 
 
 def _ordered_seed_names(old_run, new_run):
@@ -160,4 +187,28 @@ def diff_runs(old_run, new_run, global_name="global"):
         seed.entered = sorted(set(seed.added) & entered_archive)
         seed.left = sorted(set(seed.removed) & left_archive)
 
-    return Diff(global_diff, seeds)
+    # Only where inheritance makes a difference: when a seed's contents
+    # change exactly as its own list does, its own section already said so,
+    # and repeating it is noise.
+    contents = []
+    for seed in seeds:
+        if seed.presence:
+            # A seed the change added or removed gains or loses everything
+            # it inherits by definition; its label already says so.
+            continue
+        old_contents = old_run.inclusive(seed.name)
+        new_contents = new_run.inclusive(seed.name)
+        entry = SeedContents(
+            seed.name,
+            old_contents - new_contents,
+            new_contents - old_contents,
+        )
+        if not entry.changed:
+            continue
+        if set(entry.lost) == set(seed.removed) and set(entry.gained) == set(
+            seed.added
+        ):
+            continue
+        contents.append(entry)
+
+    return Diff(global_diff, seeds, contents=contents)
