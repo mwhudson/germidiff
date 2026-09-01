@@ -340,3 +340,12 @@ comment via launchpadlib. The CLI contract — arguments in, plain text on
 stdout, exit status distinguishing "ran fine" from "broke" — is meant to keep
 that wrapper thin. Note that germinate itself logs to stdout;
 germidiff captures that and keeps its own stdout to the diff alone.
+
+## Licence
+
+Copyright (C) 2026 Canonical Ltd.
+
+germidiff is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License version 3, as published by the Free
+Software Foundation. There is no "or later" option; see [COPYING](COPYING) for
+the full text.
