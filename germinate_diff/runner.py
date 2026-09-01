@@ -17,6 +17,7 @@ __all__ = [
     "GerminateRun",
     "apt_config_for_chdist",
     "arch_for_apt_config",
+    "architectures_for_apt_config",
     "build_seed_base",
     "germinate_command",
     "read_run_output",
@@ -38,11 +39,6 @@ STRUCTURE_OUTPUT = "structure"
 # all.json includes build-dependencies, so neither is part of the per-seed
 # diff by default.
 EXTRA_SEED = "extra"
-
-# How many unresolvable packages germinate may report before we say so.
-# A real germination of an Ubuntu collection reports some; hundreds mean
-# something is wrong with the inputs.
-PROBLEM_WARNING_THRESHOLD = 100
 
 
 class GerminateError(Exception):
@@ -87,24 +83,17 @@ def apt_config_for_chdist(chdist, chdist_base=None):
     )
 
 
-def arch_for_apt_config(apt_config):
-    """Return the architecture an apt config is set up for, or ``None``.
-
-    A chdist is created for one architecture, and germinate has to be told
-    the same one: pointing it at an amd64 chdist while asking for arm64
-    silently produces a germination against the wrong Packages files rather
-    than an error.  ``chdist create`` writes ``APT::Architecture`` into the
-    config, so ask apt for it rather than making the user repeat it.
-    """
+def _apt_config_values(apt_config, key):
+    """Ask apt for a configuration key, as a list of non-empty values."""
     if not os.path.isfile(apt_config):
         # apt quietly falls back to the host's own configuration when
-        # APT_CONFIG points at nothing, which would answer with the host's
-        # architecture rather than the chdist's.
+        # APT_CONFIG points at nothing, which would answer about the host
+        # rather than the chdist.
         return None
     env = dict(os.environ, APT_CONFIG=apt_config)
     try:
         proc = subprocess.run(
-            ["apt-config", "dump", "--format", "%v%n", "APT::Architecture"],
+            ["apt-config", "dump", "--format", "%v%n", key],
             env=env,
             capture_output=True,
             encoding="UTF-8",
@@ -114,8 +103,38 @@ def arch_for_apt_config(apt_config):
         return None
     if proc.returncode != 0:
         return None
-    arch = proc.stdout.strip()
-    return arch or None
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def arch_for_apt_config(apt_config):
+    """Return the architecture an apt config is set up for, or ``None``.
+
+    A chdist is created for one architecture, and germinate has to be told
+    the same one: pointing it at an amd64 chdist while asking for arm64
+    silently produces a germination against the wrong Packages files rather
+    than an error.  ``chdist create`` writes ``APT::Architecture`` into the
+    config, so ask apt for it rather than making the user repeat it.
+    """
+    values = _apt_config_values(apt_config, "APT::Architecture")
+    return values[0] if values else None
+
+
+def architectures_for_apt_config(apt_config):
+    """The architectures an apt config carries indexes for, or ``None``.
+
+    Germinating for an architecture the chdist does not have is not an error
+    and does not even look like one -- apt serves the Packages files it has,
+    germinate resolves what it can, and the result is a plausible diff built
+    from the wrong archive.  On a real collection it is indistinguishable
+    from a good run by any measure taken after the fact (it resolves about as
+    many packages, and reports about as many problems), so it has to be
+    caught here, before germinating.
+    """
+    values = _apt_config_values(apt_config, "APT::Architectures")
+    if not values:
+        arch = arch_for_apt_config(apt_config)
+        return [arch] if arch else None
+    return values
 
 
 def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):
@@ -319,25 +338,6 @@ def run_germinate(
         raise GerminateError(
             "germinate failed with exit status %d:\n%s"
             % (proc.returncode, output.strip())
-        )
-
-    # Germinate prefixes lines about packages it could not resolve with "?".
-    # A handful is normal; a flood usually means it was pointed at the wrong
-    # archive -- most often an --arch the chdist does not carry -- which
-    # otherwise shows up as a plausible-looking but meaningless diff.
-    problems = sum(1 for line in output.splitlines() if line.startswith("?"))
-    if problems > PROBLEM_WARNING_THRESHOLD:
-        where = (
-            "see %s" % log_path
-            if log_path
-            else "re-run with --keep to see germinate's own output"
-        )
-        _logger.warning(
-            "germinate could not resolve %d packages or dependencies; "
-            "check that --arch %s matches the chdist (%s)",
-            problems,
-            arch,
-            where,
         )
 
     # bin/germinate discards main()'s return value, so a clean exit status is

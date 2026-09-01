@@ -11,6 +11,7 @@ from germinate_diff.runner import (
     GerminateError,
     apt_config_for_chdist,
     arch_for_apt_config,
+    architectures_for_apt_config,
     germinate_command,
 )
 from tests.helpers import FAKE_GERMINATE, GitTestCase
@@ -372,6 +373,41 @@ class TestArchDefault(CliTestCase):
         self.assertEqual(0, status)
         with open(os.path.join(work_dir, "new", "germinate.log")) as f:
             self.assertIn("arch=ppc64el", f.read())
+
+    def test_architectures_come_from_the_chdist(self):
+        self.assertEqual(
+            ["ppc64el"], architectures_for_apt_config(self.apt_conf)
+        )
+
+    def test_a_missing_apt_config_gives_no_architectures(self):
+        self.assertIsNone(
+            architectures_for_apt_config(
+                os.path.join(self.temp_dir, "nope.conf")
+            )
+        )
+
+    def test_an_arch_the_chdist_lacks_is_warned_about(self):
+        # It cannot be caught after the fact: on a real collection,
+        # germinating for an absent architecture produces about as many
+        # packages, and about as many complaints, as a good run.
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        with self.assertLogs("germinate-diff", level="WARNING") as caught:
+            status, _ = self.run_cli(
+                repo, old, new, "questing", "--arch", "riscv64"
+            )
+        self.assertEqual(0, status)
+        self.assertIn(
+            "carries ppc64el, not riscv64", "\n".join(caught.output)
+        )
 
     def test_an_explicit_arch_still_wins(self):
         self.make_platform()

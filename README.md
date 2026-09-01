@@ -77,8 +77,12 @@ to a chdist directory or straight to an `apt.conf`.
 The architecture is taken from the chdist (its `APT::Architecture`) rather
 than assumed, because germinating against an architecture the chdist does not
 carry does not fail — it quietly produces a plausible-looking but meaningless
-diff. `--arch` overrides it; if germinate then reports a mass of unresolvable
-packages, germinate-diff says so on stderr.
+diff, built from whichever Packages files apt does have. `--arch` overrides
+it, and germinate-diff then checks the architecture against the chdist's
+`APT::Architectures` and warns if it is not there. That check has to happen
+before germinating: afterwards the two are indistinguishable, since a
+wrong-architecture run of a real collection resolves about as many packages,
+and reports about as many problems, as a good one.
 
 ### The collection map
 

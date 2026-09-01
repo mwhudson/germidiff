@@ -19,6 +19,7 @@ from germinate_diff.runner import (
     GerminateError,
     apt_config_for_chdist,
     arch_for_apt_config,
+    architectures_for_apt_config,
     build_seed_base,
     read_run_output,
     resolve_dependencies,
@@ -249,6 +250,17 @@ def run(args):
     apt_config = apt_config_for_chdist(args.chdist, args.chdist_base)
     if args.arch is None:
         args.arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
+    else:
+        available = architectures_for_apt_config(apt_config)
+        if available and args.arch not in available:
+            _logger.warning(
+                "chdist %s carries %s, not %s; germinating for an "
+                "architecture it does not have still succeeds, but the "
+                "result comes from the wrong Packages files",
+                args.chdist,
+                "/".join(available),
+                args.arch,
+            )
     _logger.info("archive metadata: %s (%s)", apt_config, args.arch)
 
     if old_commit == new_commit:
