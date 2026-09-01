@@ -229,7 +229,7 @@ class TestDropAlternative(TestCase):
 
 
 class TestReportSections(TestCase):
-    def test_retained_section(self):
+    def test_retained_section_leads_with_the_soft_ones(self):
         retained = [
             Retained("build-essential", [parse_why("dpkg-dev (Recommends)")],
                      ["dev"]),
@@ -239,10 +239,27 @@ class TestReportSections(TestCase):
             [
                 "**no longer seeded, still pulled in**",
                 "! build-essential: only by dpkg-dev (Recommends)",
-                "  held by hard dependencies: gcc",
+                "  1 other held by hard dependencies: gcc",
             ],
             format_retained(retained),
         )
+
+    def test_the_all_clear_does_not_read_like_the_warning(self):
+        # Fixing the problem by seeding the package again must not leave a
+        # report that differs only by a missing line.
+        retained = [
+            Retained("gcc", [parse_why("build-essential")], ["dev"]),
+            Retained("make", [parse_why("dpkg-dev")], ["dev"]),
+        ]
+        lines = format_retained(retained)
+        self.assertEqual(
+            [
+                "**no longer seeded, still pulled in**",
+                "all 2 held by hard dependencies: gcc, make",
+            ],
+            lines,
+        )
+        self.assertNotIn("!", "\n".join(lines))
 
     def test_no_section_without_findings(self):
         self.assertEqual([], format_retained([]))

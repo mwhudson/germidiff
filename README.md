@@ -70,13 +70,25 @@ So every run also reports what the change stopped naming but did not remove:
 ```
 **no longer seeded, still pulled in**
 ! build-essential: only by dpkg-dev (Recommends)
-  held by hard dependencies: dpkg-dev, g++, gcc, libc6-dev, make
+  5 others held by hard dependencies: dpkg-dev, g++, gcc, libc6-dev, make
 ```
 
 A `!` line means every reason germinate gave for keeping that package is a
 `Recommends`: drop it upstream and the package leaves. Packages held by a real
-dependency are listed on one line as reassurance, not as a warning. The
+dependency are counted on one line as reassurance, not as a warning. The
 section is omitted when a change names nothing new and drops nothing.
+
+When nothing is held softly the section says so in its own words, rather than
+printing the same thing minus the `!` lines:
+
+```
+**no longer seeded, still pulled in**
+all 5 held by hard dependencies: dpkg-dev, g++, gcc, libc6-dev, make
+```
+
+That matters because seeding the flagged package again is how you fix the
+problem, and the fixed report has to be tellable from the broken one at a
+glance.
 
 This is cheap and scoped to the change's own footprint. Germinate writes each
 seed's explicit entries to `<seed>.seed`, so "what did this change stop saying

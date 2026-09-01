@@ -115,12 +115,20 @@ def format_retained(retained):
             % (entry.package, _join_holders(entry.holders))
         )
     if hard:
-        lines.extend(
-            _wrap(
-                "held by hard dependencies: %s"
-                % ", ".join(entry.package for entry in hard)
+        # The all-clear has to read as one.  Saying the same thing either way
+        # and letting the "!" lines above be the only difference makes a
+        # change that fixed the problem look like the change that caused it.
+        names = ", ".join(entry.package for entry in hard)
+        if soft:
+            lines.extend(
+                _wrap("%d other%s held by hard dependencies: %s"
+                      % (len(hard), "" if len(hard) == 1 else "s", names))
             )
-        )
+        else:
+            lines.extend(
+                _wrap("all %d held by hard dependencies: %s"
+                      % (len(hard), names), indent="")
+            )
     return lines
 
 
