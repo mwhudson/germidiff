@@ -45,8 +45,68 @@ treated as empty on the side where it does not exist, and it is labelled `(new
 seed)` or `(removed seed)` so an all-added or all-removed list does not have
 to be interpreted as one.
 
+Last comes the retention check, described below, which reports packages the
+change stopped seeding but did not actually remove.
+
 Exit status is 0 whenever both germinate runs succeeded, whether or not any
 differences were found, and nonzero if germinate or the tool itself failed.
+
+## What the diff cannot show: retention
+
+A change can leave every expanded list alone and still matter. Dropping a seed
+entry often changes nothing, because something else in the archive pulls the
+package in anyway — but "anyway" may mean a `Recommends`, which nobody outside
+the seeds has promised to keep. The diff says "no changes" and the fact that
+the package's presence became accidental goes unremarked.
+
+So every run also reports what the change stopped naming but did not remove:
+
+```
+**no longer seeded, still pulled in**
+! build-essential: only by dpkg-dev (Recommends)
+  held by hard dependencies: dpkg-dev, g++, gcc, libc6-dev, make
+```
+
+A `!` line means every reason germinate gave for keeping that package is a
+`Recommends`: drop it upstream and the package leaves. Packages held by a real
+dependency are listed on one line as reassurance, not as a warning. The
+section is omitted when a change names nothing new and drops nothing.
+
+This is cheap and scoped to the change's own footprint. Germinate writes each
+seed's explicit entries to `<seed>.seed`, so "what did this change stop saying
+out loud" is a set difference over data both runs already produced — typically
+a handful of packages rather than the whole closure — and the reason comes
+from germinate's own `Why` column.
+
+### Probing it
+
+Germinate records only *one* reason per package, so a `!` line is a strong
+hint rather than proof, and it says nothing about what else would follow the
+package out. `--probe-retention` settles both by germinating again with that
+one dependency removed:
+
+```
+**retention probe**
+cutting dpkg-dev's Recommends of build-essential removes 5 package(s):
+-build-essential
+-g++
+-g++-15
+-g++-15-x86-64-linux-gnu
+-g++-x86-64-linux-gnu
+```
+
+That last part is the bit the cheap check cannot reach: `g++` is held by
+`build-essential` through a hard dependency, so it looks solid until the root
+is cut.
+
+It costs one germination per flagged package plus one for the baseline, which
+is why it is off by default. It needs germinate importable by the same Python,
+since there is no way to ask the germinate command line to ignore a single
+dependency; it goes through germinate's documented `Archive` interface,
+rewriting one field as the archive streams past, and touches no private state.
+Before reporting anything it checks that germinating in-process reproduces the
+run being explained, and refuses rather than answering a question about a
+different germination.
 
 ## Requirements
 
@@ -191,7 +251,14 @@ Reverse-dependency calculation is turned off by default (germinate's
 expanded lists being diffed. `--rdepends` turns it back on.
 
 Justification ("why") diffing is deliberately not implemented; it is too noisy
-for an MP comment.
+for an MP comment — a single package's reverse-dependency tree from one small
+germination ran to 3491 lines. The retention check above is the useful part of
+that idea, scoped to the packages the change actually touched.
+
+The expanded lists come from germinate's JSON output, but germinate records
+*why* a package is present only in its human-readable tables, so the retention
+check parses those. It degrades to reporting no reason rather than failing, so
+a change to that format can cost the retention check but never the diff.
 
 ## Running the tests
 

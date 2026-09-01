@@ -7,10 +7,15 @@ lines), and writes the output files germinate-diff reads back: ``structure``
 and one ``<seed>.json`` per seed.
 
 "Expanding" a seed here means its own packages, plus a fake dependency for
-any package written as ``name+dep`` in a seed file, minus anything already
-provided by a seed it inherits from -- the same one-list-per-package rule
-germinate follows.  That is enough to exercise everything on the
-germinate-diff side without needing apt.
+any package written as ``name+dep`` (a hard dependency) or ``name~dep`` (a
+Recommends) in a seed file, minus anything already provided by a seed it
+inherits from -- the same one-list-per-package rule germinate follows.  That
+is enough to exercise everything on the germinate-diff side without needing
+apt.
+
+Alongside the JSON, it writes the table-formatted ``<seed>`` and
+``<seed>.seed`` files in germinate's own layout, since the retention check
+reads the ``Why`` column out of them.
 """
 
 import json
@@ -80,6 +85,56 @@ def read_seed(seed_base, branches, name):
     return []
 
 
+def _split_entry(entry):
+    """Split "pkg", "pkg+dep" or "pkg~dep" into (pkg, kind, dep)."""
+    for kind in ("+", "~"):
+        if kind in entry:
+            pkg, _, dep = entry.partition(kind)
+            return pkg, kind, dep
+    return entry, None, None
+
+
+_COLUMNS = ("Package", "Source", "Why", "Maintainer", "Deb Size (B)",
+            "Inst Size (KB)")
+
+
+def _write_table(filename, rows):
+    """Write a list in germinate's table format, headers and rules included."""
+    widths = [len(c) for c in _COLUMNS]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    with open(filename, "w", encoding="UTF-8") as f:
+        print(" | ".join(c.ljust(w) for c, w in zip(_COLUMNS, widths)),
+              file=f)
+        print("-+-".join("-" * w for w in widths), file=f)
+        for row in rows:
+            print(" | ".join(c.ljust(w) for c, w in zip(row, widths)),
+                  file=f)
+        print("-" * (sum(widths) + 3 * (len(widths) - 1)), file=f)
+        print(" " * widths[0] + " | " + "0", file=f)
+
+
+def _write_outputs(options, seed_order, inherit, seeded, expanded, why):
+    """Write the human-readable lists the retention check reads."""
+    for name in seed_order:
+        explicit = set()
+        for entry in seeded[name]:
+            pkg, _, _ = _split_entry(entry)
+            explicit.add(pkg)
+
+        def rows(packages):
+            return [
+                (pkg, pkg, why.get((name, pkg), ""), "Nobody <n@example.org>",
+                 "0", "0")
+                for pkg in sorted(packages)
+            ]
+
+        _write_table(name, rows(expanded[name]))
+        _write_table(name + ".seed", rows(explicit & expanded[name]))
+        _write_table(name + ".seed-recommends", [])
+
+
 def main():
     parser = optparse.OptionParser()
     parser.add_option("-S", "--seed-source", dest="seeds")
@@ -110,6 +165,7 @@ def main():
     # anything already provided by a seed this one inherits from is left out.
     expanded = {}
     ancestors = {}
+    why = {}
     for name in seed_order:
         ancestors[name] = set()
         for parent in inherit[name]:
@@ -118,13 +174,23 @@ def main():
 
         packages = set()
         for entry in seeded[name]:
-            pkg, _, dep = entry.partition("+")
+            pkg, kind, dep = _split_entry(entry)
             packages.add(pkg)
+            why.setdefault(
+                (name, pkg),
+                "%s %s seed" % (options.release.title(), name),
+            )
             if dep:
                 packages.add(dep)
+                why.setdefault(
+                    (name, dep),
+                    "%s (Recommends)" % pkg if kind == "~" else pkg,
+                )
         for ancestor in ancestors[name]:
             packages -= expanded.get(ancestor, set())
         expanded[name] = packages
+
+    _write_outputs(options, seed_order, inherit, seeded, expanded, why)
 
     with open("structure", "w", encoding="UTF-8") as f:
         for name in seed_order:

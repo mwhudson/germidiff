@@ -41,6 +41,8 @@ STRUCTURE_OUTPUT = "structure"
 EXTRA_SEED = "extra"
 
 
+
+
 class GerminateError(Exception):
     """Germinate could not be run, or did not produce usable output."""
 
@@ -125,10 +127,9 @@ def architectures_for_apt_config(apt_config):
     Germinating for an architecture the chdist does not have is not an error
     and does not even look like one -- apt serves the Packages files it has,
     germinate resolves what it can, and the result is a plausible diff built
-    from the wrong archive.  On a real collection it is indistinguishable
-    from a good run by any measure taken after the fact (it resolves about as
-    many packages, and reports about as many problems), so it has to be
-    caught here, before germinating.
+    from the wrong archive.  On a real collection it is genuinely
+    indistinguishable from a good run by any measure taken after the fact, so
+    it has to be caught here, before germinating.
     """
     values = _apt_config_values(apt_config, "APT::Architectures")
     if not values:
@@ -211,10 +212,17 @@ class GerminateRun:
         #: Seed name to the set of packages in its expanded list.
         self.seeds = seeds
 
-    def union(self):
-        """The union of every seed's expanded package list."""
+    def union(self, exclude_extra=False):
+        """The union of every seed's expanded package list.
+
+        ``exclude_extra`` drops germinate's ``extra`` pseudo-seed, so that
+        the result is comparable with a germination that only looked at the
+        real seeds regardless of whether ``--include-extra`` was given.
+        """
         result = set()
-        for packages in self.seeds.values():
+        for name, packages in self.seeds.items():
+            if exclude_extra and name == EXTRA_SEED:
+                continue
             result |= packages
         return result
 

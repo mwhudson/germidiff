@@ -428,3 +428,74 @@ class TestArchDefault(CliTestCase):
         self.assertEqual(0, status)
         with open(os.path.join(work_dir, "new", "germinate.log")) as f:
             self.assertIn("arch=riscv64", f.read())
+
+
+class TestRetentionEndToEnd(CliTestCase):
+    """The build-essential shape: a seed entry removed, but still pulled in."""
+
+    def make_trees(self, new_desktop):
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            # dpkg-dev recommends build-essential, as in the real archive.
+            {"desktop": ["dpkg-dev~build-essential", "build-essential"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write_collection(
+            repo,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": new_desktop},
+        )
+        new = self.commit(repo, "drop the explicit entry")
+        return repo, old, new
+
+    def test_reports_a_package_now_held_only_by_a_recommends(self):
+        repo, old, new = self.make_trees(["dpkg-dev~build-essential"])
+        status, out = self.run_cli(repo, old, new, "questing")
+        self.assertEqual(0, status)
+        # The expanded lists are unchanged -- that is the whole point.
+        self.assertIn("No changes to any expanded package list.", out)
+        self.assertIn("**no longer seeded, still pulled in**", out)
+        self.assertIn(
+            "! build-essential: only by dpkg-dev (Recommends)", out
+        )
+
+    def test_says_nothing_when_the_package_really_went_away(self):
+        # Dropping both leaves nothing to explain: it shows in the diff.
+        repo, old, new = self.make_trees([])
+        status, out = self.run_cli(repo, old, new, "questing")
+        self.assertEqual(0, status)
+        self.assertIn("-build-essential", out)
+        self.assertNotIn("no longer seeded", out)
+
+    def test_a_hard_dependency_is_not_flagged_as_soft(self):
+        repo = self.make_seed_repo(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["dpkg-dev+build-essential", "build-essential"]},
+        )
+        self.make_platform()
+        old = self.commit(repo, "initial")
+        self.write_collection(
+            repo,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["dpkg-dev+build-essential"]},
+        )
+        new = self.commit(repo, "drop the explicit entry")
+
+        status, out = self.run_cli(repo, old, new, "questing")
+        self.assertEqual(0, status)
+        self.assertIn("**no longer seeded, still pulled in**", out)
+        self.assertNotIn("!", out)
+        self.assertIn("held by hard dependencies: build-essential", out)
+
+    def test_probe_degrades_gracefully_without_a_real_archive(self):
+        # The stub germinate has no archive behind it, so the probe cannot
+        # run; that must warn rather than lose the diff.
+        repo, old, new = self.make_trees(["dpkg-dev~build-essential"])
+        status, out = self.run_cli(
+            repo, old, new, "questing", "--probe-retention"
+        )
+        self.assertEqual(0, status)
+        self.assertIn("! build-essential: only by dpkg-dev", out)

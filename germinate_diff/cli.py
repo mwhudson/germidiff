@@ -14,7 +14,9 @@ from germinate_diff.collection_map import (
     load_collection_map,
 )
 from germinate_diff.diff import diff_runs
+from germinate_diff.probe import ProbeError, probe_edges
 from germinate_diff.report import format_diff
+from germinate_diff.retention import find_retained, soft_edges
 from germinate_diff.runner import (
     GerminateError,
     apt_config_for_chdist,
@@ -155,6 +157,13 @@ def parse_args(argv=None):
         "expanded lists we diff",
     )
     parser.add_argument(
+        "--probe-retention",
+        action="store_true",
+        help="for each package now held only by a Recommends, germinate "
+        "again with that one dependency cut and report what actually falls "
+        "out; costs a germination per package, so it is off by default",
+    )
+    parser.add_argument(
         "--include-extra",
         action="store_true",
         help="also diff germinate's 'extra' pseudo-seed (packages built by "
@@ -208,6 +217,7 @@ def _one_side(
         os.path.join(side_dir, "seeds"), seed_dist, checkout, branch_dirs
     )
     out_dir = os.path.join(side_dir, "out")
+    log_path = os.path.join(side_dir, "germinate.log") if args.keep else None
     run_germinate(
         args.germinate,
         out_dir,
@@ -218,13 +228,12 @@ def _one_side(
         extra_args=_germinate_args(args),
         # Only worth writing where it will outlive the run: a failing run
         # reports germinate's output inline anyway.
-        log_path=(
-            os.path.join(side_dir, "germinate.log") if args.keep else None
-        ),
+        log_path=log_path,
     )
-    return read_run_output(
+    run = read_run_output(
         out_dir, label, ref, include_extra=args.include_extra
     )
+    return run, out_dir, seed_base
 
 
 def run(args):
@@ -297,7 +306,7 @@ def run(args):
                     describe_head(directory),
                 )
 
-            old_run = _one_side(
+            old_run, old_out, _ = _one_side(
                 args,
                 "old",
                 old_commit,
@@ -307,7 +316,7 @@ def run(args):
                 branch_dirs,
                 seed_dist,
             )
-            new_run = _one_side(
+            new_run, new_out, new_seed_base = _one_side(
                 args,
                 "new",
                 new_commit,
@@ -317,13 +326,39 @@ def run(args):
                 branch_dirs,
                 seed_dist,
             )
+
+            # A change can leave every expanded list alone and still make a
+            # package's presence rest on something nobody promised to keep,
+            # so this runs whether or not anything differed.
+            retained = find_retained(old_out, new_out, new_run)
+
+            probes = []
+            if args.probe_retention:
+                edges = soft_edges(retained)
+                if not edges:
+                    _logger.info("nothing to probe: no soft retention found")
+                else:
+                    # Must happen before the worktrees go away.
+                    try:
+                        probes = probe_edges(
+                            edges,
+                            new_seed_base,
+                            seed_dist,
+                            apt_config,
+                            args.arch,
+                            baseline=new_run.union(exclude_extra=True),
+                        )
+                    except ProbeError as e:
+                        _logger.warning("%s", e)
     finally:
         if remove_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
         elif args.keep:
             _logger.info("left working files in %s", work_dir)
 
-    return format_diff(diff_runs(old_run, new_run))
+    return format_diff(
+        diff_runs(old_run, new_run), retained=retained, probes=probes
+    )
 
 
 def main(argv=None):
