@@ -163,7 +163,9 @@ def parse_args(argv=None):
         metavar="ARG",
         action="append",
         default=[],
-        help="pass an extra argument to germinate; repeatable",
+        help="pass an extra argument to germinate; repeatable.  Use the "
+        "--germinate-arg=ARG form for arguments starting with a dash, which "
+        "are otherwise read as germidiff's own options",
     )
     parser.add_argument(
         "--rdepends",
