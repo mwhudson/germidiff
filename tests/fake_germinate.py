@@ -96,7 +96,7 @@ def main():
         sys.exit(1)
 
     # germinate logs to stdout; germinate-diff must not let that through.
-    print("* Using seeds from %s" % options.seeds)
+    print("* Using seeds from %s arch=%s" % (options.seeds, options.arch))
 
     seed_order, inherit, branches = collect(
         options.seeds, options.release, set()

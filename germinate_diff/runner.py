@@ -16,6 +16,7 @@ __all__ = [
     "GerminateError",
     "GerminateRun",
     "apt_config_for_chdist",
+    "arch_for_apt_config",
     "build_seed_base",
     "germinate_command",
     "read_run_output",
@@ -37,6 +38,11 @@ STRUCTURE_OUTPUT = "structure"
 # all.json includes build-dependencies, so neither is part of the per-seed
 # diff by default.
 EXTRA_SEED = "extra"
+
+# How many unresolvable packages germinate may report before we say so.
+# A real germination of an Ubuntu collection reports some; hundreds mean
+# something is wrong with the inputs.
+PROBLEM_WARNING_THRESHOLD = 100
 
 
 class GerminateError(Exception):
@@ -79,6 +85,37 @@ def apt_config_for_chdist(chdist, chdist_base=None):
         "chdist %s has no etc/apt/apt.conf (looked in %s)"
         % (chdist, directory)
     )
+
+
+def arch_for_apt_config(apt_config):
+    """Return the architecture an apt config is set up for, or ``None``.
+
+    A chdist is created for one architecture, and germinate has to be told
+    the same one: pointing it at an amd64 chdist while asking for arm64
+    silently produces a germination against the wrong Packages files rather
+    than an error.  ``chdist create`` writes ``APT::Architecture`` into the
+    config, so ask apt for it rather than making the user repeat it.
+    """
+    if not os.path.isfile(apt_config):
+        # apt quietly falls back to the host's own configuration when
+        # APT_CONFIG points at nothing, which would answer with the host's
+        # architecture rather than the chdist's.
+        return None
+    env = dict(os.environ, APT_CONFIG=apt_config)
+    try:
+        proc = subprocess.run(
+            ["apt-config", "dump", "--format", "%v%n", "APT::Architecture"],
+            env=env,
+            capture_output=True,
+            encoding="UTF-8",
+            errors="replace",
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    arch = proc.stdout.strip()
+    return arch or None
 
 
 def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):
@@ -250,7 +287,8 @@ def run_germinate(
     """Run germinate in ``out_dir``, which it fills with its output files.
 
     Germinate logs to stdout, so its output is captured rather than let
-    through: our own stdout is reserved for the diff.
+    through: our own stdout is reserved for the diff.  ``log_path``, if
+    given, is where that output is saved for later inspection.
     """
     os.makedirs(out_dir, exist_ok=True)
     command = germinate_command(
@@ -282,6 +320,26 @@ def run_germinate(
             "germinate failed with exit status %d:\n%s"
             % (proc.returncode, output.strip())
         )
+
+    # Germinate prefixes lines about packages it could not resolve with "?".
+    # A handful is normal; a flood usually means it was pointed at the wrong
+    # archive -- most often an --arch the chdist does not carry -- which
+    # otherwise shows up as a plausible-looking but meaningless diff.
+    problems = sum(1 for line in output.splitlines() if line.startswith("?"))
+    if problems > PROBLEM_WARNING_THRESHOLD:
+        where = (
+            "see %s" % log_path
+            if log_path
+            else "re-run with --keep to see germinate's own output"
+        )
+        _logger.warning(
+            "germinate could not resolve %d packages or dependencies; "
+            "check that --arch %s matches the chdist (%s)",
+            problems,
+            arch,
+            where,
+        )
+
     # bin/germinate discards main()'s return value, so a clean exit status is
     # not by itself proof that the run worked; the caller checks the output
     # files.  Keep the log around so a failure there can be explained.

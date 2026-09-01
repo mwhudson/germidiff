@@ -74,6 +74,12 @@ is identical on each side. `--chdist-base` overrides where chdists are looked
 for (default `$CHDIST_HOME`, or `~/.chdist`); the argument may also be a path
 to a chdist directory or straight to an `apt.conf`.
 
+The architecture is taken from the chdist (its `APT::Architecture`) rather
+than assumed, because germinating against an architecture the chdist does not
+carry does not fail — it quietly produces a plausible-looking but meaningless
+diff. `--arch` overrides it; if germinate then reports a mass of unresolvable
+packages, germinate-diff says so on stderr.
+
 ### The collection map
 
 Seed collections build on each other: an outer collection such as desktop or
@@ -189,11 +195,24 @@ for an MP comment.
 python3 -m unittest discover
 ```
 
-The tests do not need an archive: most of them drive the CLI against a
-stand-in germinate in `tests/fake_germinate.py`. The tests in
+The tests do not need an archive or a network: most of them drive the CLI
+against a stand-in germinate in `tests/fake_germinate.py`. The tests in
 `tests/test_germinate_integration.py` exercise real germinate — its option
 parser and its seed resolution — and are skipped when germinate is not
 importable.
+
+For a check against a real archive, point it at a real chdist:
+
+```
+chdist create stonking
+printf 'deb http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
+    > ~/.chdist/stonking/etc/apt/sources.list
+printf 'deb-src http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
+    >> ~/.chdist/stonking/etc/apt/sources.list
+chdist apt stonking update
+
+germinate-diff ~/seeds/ubuntu main my-branch stonking
+```
 
 ## Launchpad integration
 

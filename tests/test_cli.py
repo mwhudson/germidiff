@@ -2,12 +2,15 @@
 
 import io
 import os
+import shutil
+import unittest
 from contextlib import redirect_stdout
 
 from germinate_diff.cli import main
 from germinate_diff.runner import (
     GerminateError,
     apt_config_for_chdist,
+    arch_for_apt_config,
     germinate_command,
 )
 from tests.helpers import FAKE_GERMINATE, GitTestCase
@@ -18,9 +21,11 @@ class CliTestCase(GitTestCase):
         super().setUp()
         self.temp_dir = self.make_temp_dir()
         self.chdist_base = os.path.join(self.temp_dir, "chdists")
-        self.write(
-            os.path.join(self.chdist_base, "questing", "etc", "apt",
-                         "apt.conf"),
+        self.apt_conf = self.write(
+            os.path.join(
+                self.chdist_base, "questing", "etc", "apt", "apt.conf"
+            ),
+            'Apt {\n   Architecture "ppc64el";\n};\n'
             'Dir "%s";\n' % self.temp_dir,
         )
 
@@ -304,10 +309,10 @@ class TestAptConfigForChdist(CliTestCase):
         )
 
     def test_accepts_an_apt_conf_path(self):
-        path = os.path.join(
-            self.chdist_base, "questing", "etc", "apt", "apt.conf"
+        self.assertEqual(
+            self.apt_conf,
+            apt_config_for_chdist(self.apt_conf, self.chdist_base),
         )
-        self.assertEqual(path, apt_config_for_chdist(path, self.chdist_base))
 
     def test_unknown_chdist(self):
         with self.assertRaises(GerminateError) as cm:
@@ -329,3 +334,61 @@ class TestGerminateCommand(CliTestCase):
             "germinate", "/seeds", "ubuntu", "/apt.conf", "amd64"
         )
         self.assertEqual("germinate", command[0])
+
+
+@unittest.skipIf(
+    shutil.which("apt-config") is None, "apt-config is not installed"
+)
+class TestArchDefault(CliTestCase):
+    def test_arch_comes_from_the_chdist(self):
+        # Germinating against an arch the chdist does not carry produces a
+        # plausible-looking but meaningless diff, so the arch is taken from
+        # the chdist rather than assumed.
+        self.assertEqual("ppc64el", arch_for_apt_config(self.apt_conf))
+
+    def test_a_missing_apt_config_gives_no_arch(self):
+        # Not just tidiness: apt falls back to the host's own configuration
+        # when APT_CONFIG points at nothing, so asking it would quietly
+        # answer with the host's architecture instead of the chdist's.
+        self.assertIsNone(
+            arch_for_apt_config(os.path.join(self.temp_dir, "nope.conf"))
+        )
+
+    def test_the_run_uses_the_chdist_arch(self):
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        work_dir = os.path.join(self.temp_dir, "work")
+        status, _ = self.run_cli(
+            repo, old, new, "questing", "--work-dir", work_dir
+        )
+        self.assertEqual(0, status)
+        with open(os.path.join(work_dir, "new", "germinate.log")) as f:
+            self.assertIn("arch=ppc64el", f.read())
+
+    def test_an_explicit_arch_still_wins(self):
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        work_dir = os.path.join(self.temp_dir, "work")
+        status, _ = self.run_cli(
+            repo, old, new, "questing", "--arch", "riscv64",
+            "--work-dir", work_dir,
+        )
+        self.assertEqual(0, status)
+        with open(os.path.join(work_dir, "new", "germinate.log")) as f:
+            self.assertIn("arch=riscv64", f.read())

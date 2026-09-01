@@ -18,6 +18,7 @@ from germinate_diff.report import format_diff
 from germinate_diff.runner import (
     GerminateError,
     apt_config_for_chdist,
+    arch_for_apt_config,
     build_seed_base,
     read_run_output,
     resolve_dependencies,
@@ -33,6 +34,10 @@ from germinate_diff.worktree import (
 )
 
 _logger = logging.getLogger("germinate-diff")
+
+# Only used when the chdist does not say what it was created for, which
+# should not happen for one made by 'chdist create'.
+DEFAULT_ARCH = "amd64"
 
 DESCRIPTION = """\
 Show the consequences of a proposed change to an Ubuntu seed collection.
@@ -125,8 +130,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "-a",
         "--arch",
-        default="amd64",
-        help="architecture to germinate for (default: %(default)s)",
+        help="architecture to germinate for (default: the architecture the "
+        "chdist was created for)",
     )
     parser.add_argument(
         "--germinate",
@@ -210,7 +215,11 @@ def _one_side(
         apt_config,
         args.arch,
         extra_args=_germinate_args(args),
-        log_path=os.path.join(side_dir, "germinate.log"),
+        # Only worth writing where it will outlive the run: a failing run
+        # reports germinate's output inline anyway.
+        log_path=(
+            os.path.join(side_dir, "germinate.log") if args.keep else None
+        ),
     )
     return read_run_output(
         out_dir, label, ref, include_extra=args.include_extra
@@ -238,7 +247,9 @@ def run(args):
     _logger.info("collection under test: %s (%s)", seed_dist, repo)
 
     apt_config = apt_config_for_chdist(args.chdist, args.chdist_base)
-    _logger.info("archive metadata: %s", apt_config)
+    if args.arch is None:
+        args.arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
+    _logger.info("archive metadata: %s (%s)", apt_config, args.arch)
 
     if old_commit == new_commit:
         _logger.warning(
