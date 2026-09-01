@@ -84,6 +84,38 @@ class TestDiffRuns(TestCase):
         diff = diff_runs(old, new)
         self.assertEqual(["z"], diff.global_diff.removed)
 
+    def test_removed_seed_separates_real_losses_from_moved_ones(self):
+        # The seed's whole expansion is "removed" from it, but only what left
+        # the archive is a real loss; the rest just changed which seed
+        # accounts for it.
+        old = make_run("old", {"base": ["a"], "gone": ["a", "b", "c"]})
+        new = make_run("new", {"base": ["a", "b"]})
+        diff = diff_runs(old, new)
+        gone = self.by_name(diff)["gone"]
+        self.assertEqual(["a", "b", "c"], gone.removed)
+        self.assertEqual(["c"], gone.left)
+        self.assertEqual(2, gone.elsewhere)
+        self.assertEqual(["c"], diff.global_diff.removed)
+
+    def test_new_seed_separates_real_arrivals_from_moved_ones(self):
+        old = make_run("old", {"base": ["a", "b"]})
+        new = make_run("new", {"base": ["a"], "fresh": ["b", "c"]})
+        diff = diff_runs(old, new)
+        fresh = self.by_name(diff)["fresh"]
+        self.assertEqual(["b", "c"], fresh.added)
+        self.assertEqual(["c"], fresh.entered)
+        self.assertEqual(1, fresh.elsewhere)
+
+    def test_an_unchanged_seed_keeps_its_whole_delta(self):
+        # Only added and removed seeds are summarised; for a seed present in
+        # both runs the +/- lines are the change itself.
+        old = make_run("old", {"base": ["a"], "desktop": ["x"]})
+        new = make_run("new", {"base": ["a", "x"], "desktop": []})
+        diff = diff_runs(old, new)
+        desktop = self.by_name(diff)["desktop"]
+        self.assertEqual(["x"], desktop.removed)
+        self.assertEqual(["x"], desktop.left)
+
     def test_report_order_is_new_structure_then_removed_seeds(self):
         old = make_run(
             "old", {"base": [], "gone": [], "desktop": []},

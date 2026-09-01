@@ -38,9 +38,46 @@ _MAX_HOLDERS = 4
 _WRAP = 72
 
 
-def _format_section(seed_diff, empty_note=None):
+def _packages(count):
+    return "%d package%s" % (count, "" if count == 1 else "s")
+
+
+def _whole_seed_lines(seed_diff):
+    """Render a seed the change added or removed.
+
+    Its ``+``/``-`` list is the seed's entire expansion rather than a delta,
+    and most of it is usually noise: the packages are in the archive either
+    way and only the seed accounting for them moved.  So lead with the ones
+    that genuinely came or went, and count the rest.
+    """
+    new = seed_diff.presence == NEW_SEED
+    total = len(seed_diff.added if new else seed_diff.removed)
+    if not total:
+        return ["no packages"]
+
+    shown = seed_diff.entered if new else seed_diff.left
+    elsewhere = seed_diff.elsewhere
+    moved = (
+        "already pulled in by other seeds"
+        if new
+        else "still pulled in by other seeds"
+    )
+
+    if not shown:
+        return ["%s, all %s" % (_packages(total), moved)]
+
+    lines = ["%s%s" % ("+" if new else "-", pkg) for pkg in shown]
+    if elsewhere:
+        lines.append("and %d more, %s" % (elsewhere, moved))
+    return lines
+
+
+def _format_section(seed_diff, empty_note=None, whole_lists=False):
     label = _PRESENCE_LABELS.get(seed_diff.presence, "")
     lines = ["**%s**%s" % (seed_diff.name, label)]
+    if seed_diff.presence and not whole_lists:
+        lines.extend(_whole_seed_lines(seed_diff))
+        return lines
     lines.extend("+%s" % pkg for pkg in seed_diff.added)
     lines.extend("-%s" % pkg for pkg in seed_diff.removed)
     if len(lines) == 1 and empty_note is not None:
@@ -117,20 +154,24 @@ def format_probes(probes):
     return lines
 
 
-def format_diff(diff, retained=(), probes=()):
+def format_diff(diff, retained=(), probes=(), whole_seed_lists=False):
     """Render a diff, with any retention findings, as plain text.
 
     The global section comes first, then one section per changed seed;
-    unchanged seeds are omitted.  Retention findings follow, and are reported
-    even when nothing changed -- a change that leaves the expanded lists alone
-    but makes a package's presence rest on a Recommends is exactly the case
-    the diff alone cannot show.  The returned string ends with a newline.
+    unchanged seeds are omitted.  A seed the change added or removed is
+    summarised rather than listed in full, unless ``whole_seed_lists``.
+    Retention findings follow, and are reported even when nothing changed --
+    a change that leaves the expanded lists alone but makes a package's
+    presence rest on a Recommends is exactly the case the diff alone cannot
+    show.  The returned string ends with a newline.
     """
     sections = []
     if diff.changed:
         sections.append(_format_section(diff.global_diff, NO_GLOBAL_CHANGES))
         for seed_diff in diff.changed_seeds:
-            sections.append(_format_section(seed_diff))
+            sections.append(
+                _format_section(seed_diff, whole_lists=whole_seed_lists)
+            )
     else:
         sections.append([NO_CHANGES])
 

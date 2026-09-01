@@ -164,6 +164,12 @@ def parse_args(argv=None):
         "out; costs a germination per package, so it is off by default",
     )
     parser.add_argument(
+        "--whole-seed-lists",
+        action="store_true",
+        help="list every package of a seed the change added or removed, "
+        "instead of summarising the ones that only moved between seeds",
+    )
+    parser.add_argument(
         "--include-extra",
         action="store_true",
         help="also diff germinate's 'extra' pseudo-seed (packages built by "
@@ -357,7 +363,10 @@ def run(args):
             _logger.info("left working files in %s", work_dir)
 
     return format_diff(
-        diff_runs(old_run, new_run), retained=retained, probes=probes
+        diff_runs(old_run, new_run),
+        retained=retained,
+        probes=probes,
+        whole_seed_lists=args.whole_seed_lists,
     )
 
 

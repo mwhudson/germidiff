@@ -59,6 +59,95 @@ class TestFormatDiff(TestCase):
             format_diff(diff),
         )
 
+    def test_removed_seed_whose_packages_all_survive_is_summarised(self):
+        # The case that motivated this: a seed removed, nothing actually
+        # leaving the archive, and 60-odd "-" lines saying so at length.
+        diff = Diff(
+            SeedDiff("global", [], []),
+            [
+                SeedDiff(
+                    "build-essential",
+                    [],
+                    ["gcc", "g++", "make"],
+                    presence=REMOVED_SEED,
+                    left=[],
+                )
+            ],
+        )
+        self.assertEqual(
+            "**global**\n"
+            "(no net change across all seeds)\n"
+            "\n"
+            "**build-essential** (removed seed)\n"
+            "3 packages, all still pulled in by other seeds\n",
+            format_diff(diff),
+        )
+
+    def test_removed_seed_leads_with_what_actually_left(self):
+        diff = Diff(
+            SeedDiff("global", [], ["gone"]),
+            [
+                SeedDiff(
+                    "oldseed",
+                    [],
+                    ["gone", "kept", "alsokept"],
+                    presence=REMOVED_SEED,
+                    left=["gone"],
+                )
+            ],
+        )
+        self.assertIn(
+            "**oldseed** (removed seed)\n"
+            "-gone\n"
+            "and 2 more, still pulled in by other seeds\n",
+            format_diff(diff),
+        )
+
+    def test_new_seed_summarises_packages_already_present(self):
+        diff = Diff(
+            SeedDiff("global", ["fresh"], []),
+            [
+                SeedDiff(
+                    "server",
+                    ["fresh", "existing"],
+                    [],
+                    presence=NEW_SEED,
+                    entered=["fresh"],
+                )
+            ],
+        )
+        self.assertIn(
+            "**server** (new seed)\n"
+            "+fresh\n"
+            "and 1 more, already pulled in by other seeds\n",
+            format_diff(diff),
+        )
+
+    def test_an_empty_new_seed_says_so(self):
+        diff = Diff(
+            SeedDiff("global", [], []),
+            [SeedDiff("empty", [], [], presence=NEW_SEED)],
+        )
+        self.assertIn("**empty** (new seed)\nno packages\n", format_diff(diff))
+
+    def test_whole_seed_lists_restores_the_full_listing(self):
+        diff = Diff(
+            SeedDiff("global", [], []),
+            [
+                SeedDiff(
+                    "build-essential",
+                    [],
+                    ["gcc", "make"],
+                    presence=REMOVED_SEED,
+                    left=[],
+                )
+            ],
+        )
+        self.assertIn(
+            "**build-essential** (removed seed)\n-gcc\n-make\n",
+            format_diff(diff, whole_seed_lists=True),
+        )
+
     def test_packages_are_sorted_with_additions_first(self):
         diff = Diff(
             SeedDiff("global", ["b", "a"], ["d", "c"]),

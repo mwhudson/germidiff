@@ -27,10 +27,10 @@ straight into a Launchpad merge proposal comment:
 
 **server** (new seed)
 +anotherpackage
-+yetanotherpackage
+and 12 more, already pulled in by other seeds
 
 **oldseed** (removed seed)
--somepackage
+62 packages, all still pulled in by other seeds
 ```
 
 The global section comes first and is the union of expanded packages across
@@ -40,10 +40,16 @@ pulled in by another does not show as a net removal — it shows as a per-seed
 change under an explicitly empty global section.
 
 Per-seed sections follow, one for each seed whose expanded list changed. A
-seed that exists in only one of the two runs is not an error: its list is
-treated as empty on the side where it does not exist, and it is labelled `(new
-seed)` or `(removed seed)` so an all-added or all-removed list does not have
-to be interpreted as one.
+seed that exists in only one of the two runs is not an error; it is labelled
+`(new seed)` or `(removed seed)`.
+
+Such a seed is summarised rather than listed in full. Its "diff" is its whole
+expansion rather than a change to one, and most of that is noise: the packages
+are in the archive either way, and only the seed accounting for them moved.
+Removing a seed of 62 packages that are all still pulled in elsewhere is worth
+one line, not 62. So the section leads with the packages that genuinely
+entered or left the archive — the ones that also appear under `global` — and
+counts the rest. `--whole-seed-lists` restores the full listing.
 
 Last comes the retention check, described below, which reports packages the
 change stopped seeding but did not actually remove.

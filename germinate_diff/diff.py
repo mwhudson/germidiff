@@ -13,16 +13,41 @@ REMOVED_SEED = "removed"
 class SeedDiff:
     """The change to one seed's expanded package list (or to the union)."""
 
-    def __init__(self, name, added, removed, presence=UNCHANGED_PRESENCE):
+    def __init__(
+        self,
+        name,
+        added,
+        removed,
+        presence=UNCHANGED_PRESENCE,
+        entered=None,
+        left=None,
+    ):
         self.name = name
         self.added = sorted(added)
         self.removed = sorted(removed)
+        #: The subset of :attr:`added` that also entered the archive, and of
+        #: :attr:`removed` that also left it, rather than merely changing
+        #: which seed accounts for them.  Only meaningful for a seed the
+        #: change added or removed, where the lists are whole expansions
+        #: rather than deltas; :func:`diff_runs` narrows them there.  They
+        #: default to the whole lists so that anything which does not narrow
+        #: them reports more rather than wrongly claiming a package was
+        #: already accounted for elsewhere.
+        self.entered = self.added if entered is None else sorted(entered)
+        self.left = self.removed if left is None else sorted(left)
         #: ``NEW_SEED``, ``REMOVED_SEED`` or ``None`` if the seed exists in
         #: both runs.  A seed that appears or disappears is not an error: its
         #: list is treated as empty on the side where it does not exist, and
         #: it is labelled so that an all-added or all-removed list does not
         #: have to be interpreted as one.
         self.presence = presence
+
+    @property
+    def elsewhere(self):
+        """How many packages only changed which seed accounts for them."""
+        return (len(self.added) - len(self.entered)) + (
+            len(self.removed) - len(self.left)
+        )
 
     @property
     def changed(self):
@@ -106,8 +131,18 @@ def diff_runs(old_run, new_run, global_name="global"):
 
     old_union = old_run.union()
     new_union = new_run.union()
-    global_diff = SeedDiff(
-        global_name, new_union - old_union, old_union - new_union
-    )
+    entered_archive = new_union - old_union
+    left_archive = old_union - new_union
+    global_diff = SeedDiff(global_name, entered_archive, left_archive)
+
+    # For a seed the change added or removed, the "diff" is its entire
+    # expanded list, which says little on its own: most of those packages are
+    # in the archive either way and only their attribution moved.  Record
+    # which ones genuinely came or went so the report can lead with those.
+    for seed in seeds:
+        if not seed.presence:
+            continue
+        seed.entered = sorted(set(seed.added) & entered_archive)
+        seed.left = sorted(set(seed.removed) & left_archive)
 
     return Diff(global_diff, seeds)
