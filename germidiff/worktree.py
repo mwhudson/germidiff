@@ -12,7 +12,7 @@ __all__ = [
     "worktrees",
 ]
 
-_logger = logging.getLogger("germinate-diff")
+_logger = logging.getLogger("germidiff")
 
 
 class GitError(Exception):

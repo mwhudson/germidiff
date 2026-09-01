@@ -1,12 +1,12 @@
-# germinate-diff
+# germidiff
 
 Show the consequences of a proposed change to an Ubuntu seed collection.
 
-Given two refs of a seed git repo, germinate-diff runs germinate against each
+Given two refs of a seed git repo, germidiff runs germinate against each
 and diffs the resulting expanded per-seed package lists.
 
 ```
-germinate-diff <seed-repo> <old-ref> <new-ref> <chdist-name> [options]
+germidiff <seed-repo> <old-ref> <new-ref> <chdist-name> [options]
 ```
 
 Both runs use the same archive metadata (your existing `chdist`) and the same
@@ -126,7 +126,7 @@ different germination.
 
 ### A chdist
 
-germinate-diff does not fetch or pin an archive snapshot. It uses an existing
+germidiff does not fetch or pin an archive snapshot. It uses an existing
 per-series chdist through germinate's `--apt-config`:
 
 ```
@@ -144,7 +144,7 @@ The architecture is taken from the chdist (its `APT::Architecture`) rather
 than assumed, because germinating against an architecture the chdist does not
 carry does not fail — it quietly produces a plausible-looking but meaningless
 diff, built from whichever Packages files apt does have. `--arch` overrides
-it, and germinate-diff then checks the architecture against the chdist's
+it, and germidiff then checks the architecture against the chdist's
 `APT::Architectures` and warns if it is not there. That check has to happen
 before germinating: afterwards the two are indistinguishable, since a
 wrong-architecture run of a real collection resolves about as many packages,
@@ -159,7 +159,7 @@ runs, so every other collection is taken from a fixed local checkout listed in
 a small hand-maintained map:
 
 ```ini
-# ~/.config/germinate-diff/collections.conf
+# ~/.config/germidiff/collections.conf
 [collections]
 platform.questing = ~/seeds/platform
 ubuntu.questing = ~/seeds/ubuntu
@@ -169,13 +169,13 @@ Keys are branch names exactly as they appear in `include` lines (and as
 germinate's `--seed-dist`); values are local checkouts, with relative paths
 resolved against the config file's directory. See `examples/collections.conf`.
 
-The map is read from `$XDG_CONFIG_HOME/germinate-diff/collections.conf` or
-`/etc/germinate-diff/collections.conf`, whichever exists first;
+The map is read from `$XDG_CONFIG_HOME/germidiff/collections.conf` or
+`/etc/germidiff/collections.conf`, whichever exists first;
 `--collection-map FILE` uses a different file, and `--collection BRANCH=DIR`
 adds or overrides single entries without editing anything.
 
 If the collection under test needs a collection the map does not cover,
-germinate-diff says which ones are missing and who included them, rather than
+germidiff says which ones are missing and who included them, rather than
 letting germinate fail with a bare "could not open STRUCTURE".
 
 A collection with no `include` lines — the platform collection itself, say —
@@ -186,20 +186,20 @@ needs no map at all.
 Diff a proposed change to an outer collection:
 
 ```
-germinate-diff ~/seeds/ubuntu main my-branch questing
+germidiff ~/seeds/ubuntu main my-branch questing
 ```
 
 Diff a change to the platform collection itself, with the map supplied inline:
 
 ```
-germinate-diff ~/seeds/platform HEAD~1 HEAD questing \
+germidiff ~/seeds/platform HEAD~1 HEAD questing \
     --collection platform.questing=~/seeds/platform
 ```
 
 Keep the worktrees and germinate's own output around to look at:
 
 ```
-germinate-diff ~/seeds/ubuntu main my-branch questing -v --work-dir /tmp/gd
+germidiff ~/seeds/ubuntu main my-branch questing -v --work-dir /tmp/gd
 ```
 
 ## How it works
@@ -288,15 +288,15 @@ printf 'deb-src http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
     >> ~/.chdist/stonking/etc/apt/sources.list
 chdist apt stonking update
 
-germinate-diff ~/seeds/ubuntu main my-branch stonking
+germidiff ~/seeds/ubuntu main my-branch stonking
 ```
 
 ## Launchpad integration
 
 Out of scope here. The intended shape is a separate wrapper that resolves a
 merge proposal's source and target branches to git refs, invokes
-`germinate-diff` as a subprocess, captures stdout, and posts it as an MP
+`germidiff` as a subprocess, captures stdout, and posts it as an MP
 comment via launchpadlib. The CLI contract — arguments in, plain text on
 stdout, exit status distinguishing "ran fine" from "broke" — is meant to keep
 that wrapper thin. Note that germinate itself logs to stdout;
-germinate-diff captures that and keeps its own stdout to the diff alone.
+germidiff captures that and keeps its own stdout to the diff alone.

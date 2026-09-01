@@ -13,7 +13,7 @@ FAKE_GERMINATE = os.path.join(
 
 class TestCase(unittest.TestCase):
     def make_temp_dir(self):
-        temp_dir = tempfile.mkdtemp(prefix="germinate-diff-test-")
+        temp_dir = tempfile.mkdtemp(prefix="germidiff-test-")
         self.addCleanup(shutil.rmtree, temp_dir, True)
         return temp_dir
 

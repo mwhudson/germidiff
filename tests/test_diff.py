@@ -1,7 +1,7 @@
 """Tests for diffing two germinate runs."""
 
-from germinate_diff.diff import NEW_SEED, REMOVED_SEED, diff_runs
-from germinate_diff.runner import GerminateRun
+from germidiff.diff import NEW_SEED, REMOVED_SEED, diff_runs
+from germidiff.runner import GerminateRun
 from tests.helpers import TestCase
 
 

@@ -4,13 +4,13 @@
 import sys
 
 try:
-    from germinate_diff.cli import main
+    from germidiff.cli import main
 except ImportError:
     # Running from the source tree?
     import os
 
     sys.path.insert(0, os.path.join(sys.path[0], os.pardir))
-    from germinate_diff.cli import main
+    from germidiff.cli import main
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

@@ -15,7 +15,7 @@ of packages, not the whole closure.
 import glob
 import os
 
-from germinate_diff.listfile import Reason, parse_list_file
+from germidiff.listfile import Reason, parse_list_file
 
 __all__ = [
     "Retained",

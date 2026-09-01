@@ -23,7 +23,7 @@ __all__ = [
     "probe_edges",
 ]
 
-_logger = logging.getLogger("germinate-diff")
+_logger = logging.getLogger("germidiff")
 
 
 class ProbeError(Exception):
@@ -105,7 +105,7 @@ def _quiet_germinate():
     """Keep germinate's own logging out of ours while probing.
 
     Germinate logs to a logger of its own, which would otherwise appear under
-    germinate-diff's prefix as though we had said it.  These are the same
+    germidiff's prefix as though we had said it.  These are the same
     messages the run being explained already produced, and that run's output
     is the authoritative copy (kept with --keep).  Silencing them here does
     not hide a probe going wrong: a probe that fails raises, and one that
@@ -153,7 +153,7 @@ def _germinate(seed_base, seed_dist, apt_config, arch, cut=None):
     germinator.plant_seeds(structure)
 
     # Germinate looks for a seed named "blacklist" unless a file called
-    # "blocklist" exists in its working directory, which for a germinate-diff
+    # "blocklist" exists in its working directory, which for a germidiff
     # run never happens; match that rather than being cleverer than the runs
     # we are explaining.
     try:

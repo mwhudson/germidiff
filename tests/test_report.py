@@ -1,7 +1,7 @@
 """Tests for the plain-text report."""
 
-from germinate_diff.diff import NEW_SEED, REMOVED_SEED, Diff, SeedDiff
-from germinate_diff.report import NO_CHANGES, format_diff
+from germidiff.diff import NEW_SEED, REMOVED_SEED, Diff, SeedDiff
+from germidiff.report import NO_CHANGES, format_diff
 from tests.helpers import TestCase
 
 

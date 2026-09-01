@@ -1,16 +1,16 @@
 #! /usr/bin/env python3
-"""A stand-in for germinate, for testing germinate-diff without an archive.
+"""A stand-in for germinate, for testing germidiff without an archive.
 
-It accepts the arguments germinate-diff passes, resolves seed branches the way
+It accepts the arguments germidiff passes, resolves seed branches the way
 germinate does (``<seed-source>/<branch>/STRUCTURE``, following ``include``
-lines), and writes the output files germinate-diff reads back: ``structure``
+lines), and writes the output files germidiff reads back: ``structure``
 and one ``<seed>.json`` per seed.
 
 "Expanding" a seed here means its own packages, plus a fake dependency for
 any package written as ``name+dep`` (a hard dependency) or ``name~dep`` (a
 Recommends) in a seed file, minus anything already provided by a seed it
 inherits from -- the same one-list-per-package rule germinate follows.  That
-is enough to exercise everything on the germinate-diff side without needing
+is enough to exercise everything on the germidiff side without needing
 apt.
 
 Alongside the JSON, it writes the table-formatted ``<seed>`` and
@@ -150,7 +150,7 @@ def main():
         sys.stderr.write("? no such apt config %s\n" % options.apt_config)
         sys.exit(1)
 
-    # germinate logs to stdout; germinate-diff must not let that through.
+    # germinate logs to stdout; germidiff must not let that through.
     print("* Using seeds from %s arch=%s" % (options.seeds, options.arch))
 
     seed_order, inherit, branches = collect(

@@ -5,8 +5,8 @@ import logging
 import os
 import subprocess
 
-from germinate_diff.collection_map import validate_entry
-from germinate_diff.structure import (
+from germidiff.collection_map import validate_entry
+from germidiff.structure import (
     StructureError,
     required_branches,
     seed_names_from_structure_output,
@@ -25,7 +25,7 @@ __all__ = [
     "run_germinate",
 ]
 
-_logger = logging.getLogger("germinate-diff")
+_logger = logging.getLogger("germidiff")
 
 # Germinate always writes its output files into the current directory, so each
 # run needs a directory of its own.  These are the two it writes that we care

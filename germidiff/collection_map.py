@@ -40,9 +40,9 @@ def _default_config_paths():
     if not xdg_config_home:
         xdg_config_home = os.path.join(os.path.expanduser("~"), ".config")
     paths.append(
-        os.path.join(xdg_config_home, "germinate-diff", "collections.conf")
+        os.path.join(xdg_config_home, "germidiff", "collections.conf")
     )
-    paths.append("/etc/germinate-diff/collections.conf")
+    paths.append("/etc/germidiff/collections.conf")
     return paths
 
 
@@ -82,7 +82,7 @@ class CollectionMap:
     def branch_for_path(self, path):
         """Return the branch name whose checkout is ``path``, or ``None``.
 
-        This lets ``germinate-diff /path/to/platform old new chdist`` work out
+        This lets ``germidiff /path/to/platform old new chdist`` work out
         that it is the platform collection under test, without the user having
         to repeat the branch name on the command line.
         """

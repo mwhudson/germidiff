@@ -1,6 +1,6 @@
 """Tests against germinate itself, skipped when it isn't importable.
 
-These check the two assumptions germinate-diff makes about germinate that the
+These check the two assumptions germidiff makes about germinate that the
 stand-in in ``fake_germinate.py`` cannot: that the command line we build is
 the one germinate's own option parser accepts, and that germinate really does
 resolve a collection and everything it includes out of the symlink farm we
@@ -10,7 +10,7 @@ build for it.
 import os
 import unittest
 
-from germinate_diff.runner import build_seed_base, germinate_command
+from germidiff.runner import build_seed_base, germinate_command
 from tests.helpers import TestCase
 
 try:

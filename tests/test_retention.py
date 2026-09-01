@@ -2,11 +2,11 @@
 
 import os
 
-from germinate_diff.listfile import Reason, parse_why
-from germinate_diff.probe import ProbeResult, drop_alternative
-from germinate_diff.report import format_probes, format_retained
-from germinate_diff.retention import Retained, find_retained, soft_edges
-from germinate_diff.runner import GerminateRun
+from germidiff.listfile import Reason, parse_why
+from germidiff.probe import ProbeResult, drop_alternative
+from germidiff.report import format_probes, format_retained
+from germidiff.retention import Retained, find_retained, soft_edges
+from germidiff.runner import GerminateRun
 from tests.helpers import TestCase
 
 
@@ -57,7 +57,7 @@ class TestParseListFile(TestCase):
         )
 
     def test_reads_packages_and_reasons(self):
-        from germinate_diff.listfile import parse_list_file
+        from germidiff.listfile import parse_list_file
 
         path = self.write_table(
             [("vim", "Ubuntu desktop seed"), ("libgpm2", "vim")]
@@ -68,13 +68,13 @@ class TestParseListFile(TestCase):
         self.assertEqual("vim", entries["libgpm2"].holder)
 
     def test_header_rules_and_totals_are_not_packages(self):
-        from germinate_diff.listfile import parse_list_file
+        from germidiff.listfile import parse_list_file
 
         entries = parse_list_file(self.write_table([]))
         self.assertEqual({}, entries)
 
     def test_an_unreadable_file_is_empty_not_an_error(self):
-        from germinate_diff.listfile import parse_list_file
+        from germidiff.listfile import parse_list_file
 
         missing = os.path.join(self.make_temp_dir(), "nope")
         self.assertEqual({}, parse_list_file(missing))

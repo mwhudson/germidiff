@@ -1,4 +1,4 @@
-"""Command-line entry point for germinate-diff."""
+"""Command-line entry point for germidiff."""
 
 import argparse
 import logging
@@ -7,17 +7,17 @@ import shutil
 import sys
 import tempfile
 
-from germinate_diff import VERSION
-from germinate_diff.collection_map import (
+from germidiff import VERSION
+from germidiff.collection_map import (
     CollectionMapError,
     DEFAULT_CONFIG_PATHS,
     load_collection_map,
 )
-from germinate_diff.diff import diff_runs
-from germinate_diff.probe import ProbeError, probe_edges
-from germinate_diff.report import format_diff
-from germinate_diff.retention import find_retained, soft_edges
-from germinate_diff.runner import (
+from germidiff.diff import diff_runs
+from germidiff.probe import ProbeError, probe_edges
+from germidiff.report import format_diff
+from germidiff.retention import find_retained, soft_edges
+from germidiff.runner import (
     GerminateError,
     apt_config_for_chdist,
     arch_for_apt_config,
@@ -27,8 +27,8 @@ from germinate_diff.runner import (
     resolve_dependencies,
     run_germinate,
 )
-from germinate_diff.structure import StructureError
-from germinate_diff.worktree import (
+from germidiff.structure import StructureError
+from germidiff.worktree import (
     GitError,
     check_repo,
     describe_head,
@@ -36,7 +36,7 @@ from germinate_diff.worktree import (
     worktrees,
 )
 
-_logger = logging.getLogger("germinate-diff")
+_logger = logging.getLogger("germidiff")
 
 # Only used when the chdist does not say what it was created for, which
 # should not happen for one made by 'chdist create'.
@@ -53,7 +53,7 @@ change.
 """
 
 EPILOG = """\
-The collection map tells germinate-diff where the seed collections that this
+The collection map tells germidiff where the seed collections that this
 one includes live locally.  It is an ini file with a [collections] section
 mapping branch name to directory, for example:
 
@@ -77,7 +77,7 @@ differences, and nonzero if anything went wrong.
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        prog="germinate-diff",
+        prog="germidiff",
         description=DESCRIPTION,
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -211,7 +211,7 @@ def _make_work_dir(args):
     if args.work_dir:
         os.makedirs(args.work_dir, exist_ok=True)
         return os.path.abspath(args.work_dir), False
-    return tempfile.mkdtemp(prefix="germinate-diff-"), not args.keep
+    return tempfile.mkdtemp(prefix="germidiff-"), not args.keep
 
 
 def _one_side(
@@ -373,7 +373,7 @@ def run(args):
 def main(argv=None):
     args = parse_args(argv)
     logging.basicConfig(
-        format="germinate-diff: %(message)s",
+        format="germidiff: %(message)s",
         level=logging.INFO if args.verbose else logging.WARNING,
         stream=sys.stderr,
     )
@@ -385,10 +385,10 @@ def main(argv=None):
         GitError,
         StructureError,
     ) as e:
-        print("germinate-diff: error: %s" % e, file=sys.stderr)
+        print("germidiff: error: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:  # pragma: no cover
-        print("germinate-diff: interrupted", file=sys.stderr)
+        print("germidiff: interrupted", file=sys.stderr)
         return 130
 
     sys.stdout.write(text)

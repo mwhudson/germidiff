@@ -2,7 +2,7 @@
 
 import os
 
-from germinate_diff.collection_map import (
+from germidiff.collection_map import (
     CollectionMapError,
     load_collection_map,
     parse_overrides,

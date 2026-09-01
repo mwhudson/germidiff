@@ -9,7 +9,7 @@ rendered in a proportional font.
 
 import textwrap
 
-from germinate_diff.diff import NEW_SEED, REMOVED_SEED
+from germidiff.diff import NEW_SEED, REMOVED_SEED
 
 __all__ = [
     "NO_CHANGES",

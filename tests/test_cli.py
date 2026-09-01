@@ -6,8 +6,8 @@ import shutil
 import unittest
 from contextlib import redirect_stdout
 
-from germinate_diff.cli import main
-from germinate_diff.runner import (
+from germidiff.cli import main
+from germidiff.runner import (
     GerminateError,
     apt_config_for_chdist,
     arch_for_apt_config,
@@ -400,7 +400,7 @@ class TestArchDefault(CliTestCase):
         self.write(os.path.join(repo, "desktop"), " * gimp\n")
         new = self.commit(repo, "change")
 
-        with self.assertLogs("germinate-diff", level="WARNING") as caught:
+        with self.assertLogs("germidiff", level="WARNING") as caught:
             status, _ = self.run_cli(
                 repo, old, new, "questing", "--arch", "riscv64"
             )

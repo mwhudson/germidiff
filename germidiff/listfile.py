@@ -1,6 +1,6 @@
 """Reading germinate's table-formatted package lists.
 
-The expanded lists germinate-diff diffs come from its JSON output, which is
+The expanded lists germidiff diffs come from its JSON output, which is
 the right thing to build on.  But germinate only records *why* a package is
 in a list in its human-readable output -- ``write_full_list_json`` dumps
 names alone -- so the retention check has to read the table format:

@@ -2,7 +2,7 @@
 
 import os
 
-from germinate_diff.structure import (
+from germidiff.structure import (
     StructureError,
     parse_structure,
     required_branches,
