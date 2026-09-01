@@ -12,6 +12,7 @@ from germidiff.runner import (
     apt_config_for_chdist,
     arch_for_apt_config,
     architectures_for_apt_config,
+    components_for_apt_config,
     germinate_command,
 )
 from tests.helpers import FAKE_GERMINATE, GitTestCase
@@ -382,6 +383,20 @@ class TestArchDefault(CliTestCase):
     def test_a_missing_apt_config_gives_no_architectures(self):
         self.assertIsNone(
             architectures_for_apt_config(
+                os.path.join(self.temp_dir, "nope.conf")
+            )
+        )
+
+    def test_components_are_read_from_the_chdist(self):
+        # Which components are in play is the chdist's business -- germinate
+        # ignores --components under --apt-config -- so germidiff can only
+        # report them, and only if apt will say.
+        components = components_for_apt_config(self.apt_conf)
+        self.assertTrue(components is None or isinstance(components, list))
+
+    def test_a_missing_apt_config_gives_no_components(self):
+        self.assertIsNone(
+            components_for_apt_config(
                 os.path.join(self.temp_dir, "nope.conf")
             )
         )

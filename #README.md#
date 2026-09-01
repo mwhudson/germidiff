@@ -152,34 +152,6 @@ is identical on each side. `--chdist-base` overrides where chdists are looked
 for (default `$CHDIST_HOME`, or `~/.chdist`); the argument may also be a path
 to a chdist directory or straight to an `apt.conf`.
 
-### Components
-
-Which archive components are in play is a property of the chdist, not of
-germidiff. Germinate ignores `--components` when given `--apt-config` and
-reads whatever indexes apt has, so germidiff never passes it.
-
-This matters because the platform and ubuntu collections are germinated
-against main and restricted, while flavours use every component. Nothing here
-knows which collection wants which — you choose by naming the right chdist, so
-keep one per component set:
-
-```
-chdist create stonking          # deb ... stonking main restricted
-chdist create stonking-all      # deb ... stonking main restricted universe multiverse
-```
-
-Getting it wrong does not fail. Germinating the platform collection against an
-all-components chdist quietly pulled 12 universe and multiverse packages
-(`ipmitool`, `isc-dhcp-server`, `amtterm`, …) into its closure and took `extra`
-from 2124 packages to 7144. `-v` reports the components actually used, which is
-the cheapest way to catch it:
-
-```
-germidiff: archive metadata: ~/.chdist/stonking/etc/apt/apt.conf (amd64, main restricted)
-```
-
-### Architecture
-
 The architecture is taken from the chdist (its `APT::Architecture`) rather
 than assumed, because germinating against an architecture the chdist does not
 carry does not fail — it quietly produces a plausible-looking but meaningless
@@ -252,7 +224,7 @@ germidiff ~/seeds/ubuntu main my-branch questing -v --work-dir /tmp/gd
    directory, `--seed-dist` naming the branch under test, and `--apt-config`
    pointing at the chdist. Each run gets its own output directory, since
    germinate writes its output files into the current directory.
-4. Each seed's expanded package list is read from the `<seed>.json` file
+   4. Each seed's expanded package list is read from the `<seed>.json` file
    germinate writes, and the seed names from the merged `structure` file.
 5. The lists are diffed per seed and in the union across seeds, and the result
    is printed.

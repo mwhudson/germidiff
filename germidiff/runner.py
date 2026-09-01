@@ -19,6 +19,7 @@ __all__ = [
     "arch_for_apt_config",
     "architectures_for_apt_config",
     "build_seed_base",
+    "components_for_apt_config",
     "germinate_command",
     "read_run_output",
     "resolve_dependencies",
@@ -136,6 +137,46 @@ def architectures_for_apt_config(apt_config):
         arch = arch_for_apt_config(apt_config)
         return [arch] if arch else None
     return values
+
+
+def components_for_apt_config(apt_config):
+    """The archive components an apt config exposes, or ``None``.
+
+    Which components are in play is a property of the chdist, not of
+    germidiff: germinate ignores ``--components`` when given
+    ``--apt-config``, and reads whatever indexes apt has.  That is the right
+    behaviour but an easy thing to get wrong, since the platform and ubuntu
+    collections are germinated against main and restricted while flavours use
+    every component, so it is worth being able to say which was used.  Asked
+    of apt the same way :class:`germinate.archive.AptArchive` asks.
+    """
+    if not os.path.isfile(apt_config):
+        return None
+    env = dict(os.environ, APT_CONFIG=apt_config)
+    try:
+        proc = subprocess.run(
+            [
+                "apt-get",
+                "indextargets",
+                "--format",
+                "$(COMPONENT)",
+                "Identifier: Packages",
+            ],
+            env=env,
+            capture_output=True,
+            encoding="UTF-8",
+            errors="replace",
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    seen = []
+    for line in proc.stdout.splitlines():
+        component = line.strip()
+        if component and component not in seen:
+            seen.append(component)
+    return seen or None
 
 
 def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):

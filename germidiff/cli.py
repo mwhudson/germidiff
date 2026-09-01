@@ -23,6 +23,7 @@ from germidiff.runner import (
     arch_for_apt_config,
     architectures_for_apt_config,
     build_seed_base,
+    components_for_apt_config,
     read_run_output,
     resolve_dependencies,
     run_germinate,
@@ -276,7 +277,13 @@ def run(args):
                 "/".join(available),
                 args.arch,
             )
-    _logger.info("archive metadata: %s (%s)", apt_config, args.arch)
+    components = components_for_apt_config(apt_config)
+    _logger.info(
+        "archive metadata: %s (%s, %s)",
+        apt_config,
+        args.arch,
+        " ".join(components) if components else "components unknown",
+    )
 
     if old_commit == new_commit:
         _logger.warning(
