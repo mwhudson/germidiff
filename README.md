@@ -190,13 +190,32 @@ before germinating: afterwards the two are indistinguishable, since a
 wrong-architecture run of a real collection resolves about as many packages,
 and reports about as many problems, as a good one.
 
-### The collection map
+### Dependent collections
 
 Seed collections build on each other: an outer collection such as desktop or
 server pulls in the platform collection through an `include` line in its
 `STRUCTURE` file. Only the collection under test should vary between the two
-runs, so every other collection is taken from a fixed local checkout listed in
-a small hand-maintained map:
+runs, so every other collection is taken from a fixed local checkout.
+
+Usually nothing needs configuring. A branch is looked for beside the seed repo
+under test, in a directory named after it — the layout seed branches are
+normally checked out in, and the same one germinate resolves a seed source
+against. With `/tmp/ubuntu.stonking` and `/tmp/platform.stonking` side by side,
+this is the whole command:
+
+```
+germidiff /tmp/ubuntu.stonking HEAD~1 HEAD stonking
+```
+
+A branch name may itself be a path: `include ubuntu.stonking/languages` names a
+collection nested inside `ubuntu.stonking`. Those arrive with the collection
+that contains them and need nothing said about them either (and cannot be
+pointed elsewhere — the path leading to them runs through their parent).
+
+### The collection map
+
+When collections are not checked out beside each other, name them in a small
+hand-maintained map:
 
 ```ini
 # ~/.config/germidiff/collections.conf

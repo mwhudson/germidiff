@@ -19,7 +19,7 @@ import io
 import os
 import shutil
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 from germidiff.cli import main
 from germidiff.runner import (
@@ -529,3 +529,135 @@ class TestRetentionEndToEnd(CliTestCase):
         )
         self.assertEqual(0, status)
         self.assertIn("! build-essential: only by dpkg-dev", out)
+
+
+class TestCollectionDiscovery(CliTestCase):
+    """Finding dependent collections without being told where they are."""
+
+    def test_a_sibling_checkout_needs_no_collection_map(self):
+        # Seed collections are normally checked out beside each other, named
+        # for their branch -- the same layout germinate resolves a seed
+        # source against.
+        self.write_collection(
+            os.path.join(self.temp_dir, "platform.questing"),
+            "base:\n",
+            {"base": ["libc"]},
+        )
+        repo = self.make_repo(os.path.join(self.temp_dir, "ubuntu.questing"))
+        self.write_collection(
+            repo,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        # No --collection-map, no --collection.
+        out = io.StringIO()
+        with redirect_stdout(out):
+            status = main(
+                [
+                    "--germinate",
+                    FAKE_GERMINATE,
+                    "--chdist-base",
+                    self.chdist_base,
+                    repo,
+                    old,
+                    new,
+                    "questing",
+                ]
+            )
+        self.assertEqual(0, status)
+        self.assertIn("+gimp", out.getvalue())
+
+    def test_a_nested_collection_comes_with_its_parent(self):
+        # "include ubuntu.questing/languages" names a collection inside the
+        # one under test; it arrives through that collection's own symlink
+        # and must not be linked separately, which would mean writing inside
+        # the checkout.
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu.questing",
+            "include platform.questing\n"
+            "include ubuntu.questing/languages\n"
+            "desktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        self.write_collection(
+            os.path.join(repo, "languages"),
+            "desktop-fr: desktop\n",
+            {"desktop-fr": ["firefox-locale-fr"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(
+            os.path.join(repo, "languages", "desktop-fr"),
+            " * firefox-locale-fr\n * hunspell-fr\n",
+        )
+        new = self.commit(repo, "add a French dictionary")
+
+        status, out = self.run_cli(repo, old, new, "questing")
+        self.assertEqual(0, status)
+        self.assertIn("+hunspell-fr", out)
+        self.assertIn("**desktop-fr**", out)
+
+    def test_mapping_a_nested_collection_is_refused(self):
+        # It is read from inside its parent, so pointing it elsewhere cannot
+        # work; saying so beats failing to create the symlink.
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu.questing",
+            "include platform.questing\n"
+            "include ubuntu.questing/languages\n"
+            "desktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        self.write_collection(
+            os.path.join(repo, "languages"), "desktop-fr: desktop\n",
+            {"desktop-fr": ["firefox-locale-fr"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        status, out = self.run_cli(
+            repo,
+            old,
+            new,
+            "questing",
+            "--collection",
+            "ubuntu.questing/languages=%s"
+            % os.path.join(repo, "languages"),
+        )
+        self.assertEqual(1, status)
+        self.assertEqual("", out)
+
+    def test_a_missing_collection_still_reports_where_it_looked(self):
+        repo = self.make_seed_repo(
+            "ubuntu.questing",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        new = self.commit(repo, "change")
+
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            status = main(
+                [
+                    "--germinate",
+                    FAKE_GERMINATE,
+                    "--chdist-base",
+                    self.chdist_base,
+                    repo,
+                    old,
+                    new,
+                    "questing",
+                ]
+            )
+        self.assertEqual(1, status)
+        self.assertEqual("", out.getvalue())
+        message = err.getvalue()
+        self.assertIn("platform.questing", message)
+        self.assertIn("beside the seed repo", message)

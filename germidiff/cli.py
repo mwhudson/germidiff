@@ -320,10 +320,24 @@ def run(args):
             # The two sides must agree on which collections they depend on,
             # and the change under test may add or drop an include line, so
             # take the union of what each side needs.
+            # Seed collections are normally checked out beside each
+            # other, named for their branch, which is the same layout
+            # germinate resolves a seed source against -- so look there
+            # before asking for a collection map.
+            neighbours = [os.path.dirname(repo)]
             branch_dirs = {}
+            nested = set()
             for checkout in (old_co, new_co):
-                branch_dirs.update(
-                    resolve_dependencies(seed_dist, checkout, collection_map)
+                directories, links = resolve_dependencies(
+                    seed_dist, checkout, collection_map, neighbours
+                )
+                branch_dirs.update(links)
+                nested.update(set(directories) - set(links))
+            for branch in sorted(nested):
+                _logger.info(
+                    "%s is nested inside %s and comes with it",
+                    branch,
+                    branch.split("/", 1)[0],
                 )
             # The collection under test is not a fixed dependency; each side
             # supplies its own worktree for it.

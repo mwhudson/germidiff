@@ -202,39 +202,87 @@ def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):
     ``include`` line, so a directory of symlinks is all it takes to point it
     at local checkouts.  The collection under test always wins over an entry
     of the same name in the collection map.
+
+    Only whole collections get a symlink.  A branch name may be a path --
+    ``include ubuntu.stonking/languages`` names a collection nested inside
+    ``ubuntu.stonking`` -- and those are reached through their parent's
+    symlink.  Linking them separately would mean writing inside the parent's
+    checkout, since the path leading to them runs through that symlink.
     """
     os.makedirs(base_dir, exist_ok=True)
-    os.symlink(
-        os.path.abspath(under_test_dir),
-        os.path.join(base_dir, under_test_branch),
-    )
-    for branch, directory in sorted(branch_dirs.items()):
-        if branch == under_test_branch:
-            continue
+    links = dict(branch_dirs)
+    links[under_test_branch] = under_test_dir
+    for branch, directory in sorted(links.items()):
+        if "/" in branch:
+            raise GerminateError(
+                "cannot place nested collection %s in a seed source "
+                "directory; it is reached through %s"
+                % (branch, branch.split("/", 1)[0])
+            )
         os.symlink(
             os.path.abspath(directory), os.path.join(base_dir, branch)
         )
     return base_dir
 
 
-def resolve_dependencies(under_test_branch, under_test_dir, collection_map):
+def resolve_dependencies(
+    under_test_branch, under_test_dir, collection_map, neighbours=None
+):
     """Find the local directory for every branch the collection needs.
 
-    Returns a dict of branch name to directory, covering the collection under
-    test and everything it pulls in through ``include`` lines.  Raises
-    GerminateError naming what to add to the collection map if anything is
-    missing.
+    Returns a ``(directories, links)`` pair.  ``directories`` maps every
+    branch the collection pulls in through ``include`` lines to its local
+    directory; ``links`` is the subset that needs a symlink of its own in the
+    seed source directory, which is to say the whole collections rather than
+    those nested inside one.  Raises GerminateError naming what is missing.
+
+    A branch is looked for, in order, in the collection map, inside a
+    collection already resolved (for a nested name like
+    ``ubuntu.stonking/languages``), and then among ``neighbours`` -- the
+    directories beside the repo under test, which is where a seed branch
+    usually has its siblings checked out.
     """
+    resolved = {under_test_branch: under_test_dir}
+    nested = set()
 
     def resolve(branch):
-        if branch == under_test_branch:
-            return under_test_dir
+        if branch in resolved:
+            return resolved[branch]
+
         directory = collection_map.get(branch)
         if directory is not None:
             # Checked here rather than at load time, so that a map listing
             # collections this run does not need never gets in the way.
             validate_entry(branch, directory)
-        return directory
+            if "/" in branch:
+                raise GerminateError(
+                    "collection %s is nested inside %s and is read from "
+                    "there; it cannot be mapped to %s"
+                    % (branch, branch.split("/", 1)[0], directory)
+                )
+            resolved[branch] = directory
+            return directory
+
+        # "include ubuntu.stonking/languages" names a collection inside
+        # ubuntu.stonking, so it comes with its parent and needs nothing
+        # said about it.
+        if "/" in branch:
+            head, tail = branch.split("/", 1)
+            parent = resolve(head)
+            if parent is not None:
+                directory = os.path.join(parent, tail)
+                if os.path.isfile(os.path.join(directory, "STRUCTURE")):
+                    resolved[branch] = directory
+                    nested.add(branch)
+                    return directory
+            return None
+
+        for neighbour in neighbours or ():
+            directory = os.path.join(neighbour, branch)
+            if os.path.isfile(os.path.join(directory, "STRUCTURE")):
+                resolved[branch] = directory
+                return directory
+        return None
 
     try:
         order, missing = required_branches(under_test_branch, resolve)
@@ -248,13 +296,25 @@ def resolve_dependencies(under_test_branch, under_test_dir, collection_map):
         ]
         for branch, included_by in missing:
             lines.append("  %s (included by %s)" % (branch, included_by))
-        lines.append(
-            "Add them to the collection map (see --collection-map and "
-            "--collection)."
-        )
+        if neighbours:
+            lines.append(
+                "Checked out beside the seed repo (%s) or named with "
+                "--collection." % ", ".join(neighbours)
+            )
+        else:
+            lines.append(
+                "Add them to the collection map (see --collection-map and "
+                "--collection)."
+            )
         raise GerminateError("\n".join(lines))
 
-    return {branch: resolve(branch) for branch in order}
+    directories = {branch: resolved[branch] for branch in order}
+    links = {
+        branch: directory
+        for branch, directory in directories.items()
+        if branch not in nested
+    }
+    return directories, links
 
 
 class GerminateRun:
