@@ -15,7 +15,13 @@
 # along with germidiff; see the file COPYING.  If not, see
 # <https://www.gnu.org/licenses/>.
 
-from germidiff.diff import NEW_SEED, REMOVED_SEED, Diff, SeedDiff
+from germidiff.diff import (
+    NEW_SEED,
+    REMOVED_SEED,
+    Diff,
+    SeedContents,
+    SeedDiff,
+)
 from germidiff.report import NO_CHANGES, format_diff
 from tests.helpers import TestCase
 
@@ -169,3 +175,46 @@ class TestFormatDiff(TestCase):
             [],
         )
         self.assertEqual("**global**\n+a\n+b\n-c\n-d\n", format_diff(diff))
+
+
+class TestContentsSections(TestCase):
+    """What a seed holds, where that differs from what it accounts for."""
+
+    def test_a_seed_appears_once_showing_its_contents(self):
+        # Saying that cloud-minimal both gained libgnutls30t64 (it now
+        # accounts for it directly) and lost curl (its image no longer has
+        # it) is true twice over and readable neither time.
+        diff = Diff(
+            SeedDiff("global", [], ["pollinate"]),
+            [SeedDiff("cloud-minimal", ["libgnutls30t64"], [])],
+            contents=[SeedContents("cloud-minimal", ["curl"], [])],
+        )
+        text = format_diff(diff)
+        self.assertIn(
+            "**cloud-minimal** (including inherited seeds)\n-curl\n", text
+        )
+        self.assertNotIn("+libgnutls30t64", text)
+        self.assertEqual(1, text.count("**cloud-minimal**"))
+
+    def test_a_seed_without_a_contents_entry_keeps_its_own_section(self):
+        diff = Diff(
+            SeedDiff("global", [], ["pollinate"]),
+            [SeedDiff("server", [], ["pollinate"])],
+        )
+        text = format_diff(diff)
+        self.assertIn("**server**\n-pollinate\n", text)
+        self.assertNotIn("including inherited seeds", text)
+
+    def test_an_unchanged_seed_with_changed_contents_still_appears(self):
+        # It lost something from a seed it inherits, so its own list is
+        # untouched and it would otherwise go unmentioned.
+        diff = Diff(
+            SeedDiff("global", [], []),
+            [SeedDiff("server-raspi", [], [])],
+            contents=[SeedContents("server-raspi", ["pollinate"], [])],
+        )
+        text = format_diff(diff)
+        self.assertIn(
+            "**server-raspi** (including inherited seeds)\n-pollinate\n",
+            text,
+        )

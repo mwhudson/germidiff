@@ -46,7 +46,10 @@ NO_GLOBAL_CHANGES = "(no net change across all seeds)"
 RETAINED_HEADER = "**no longer seeded, still pulled in**"
 PROBE_HEADER = "**retention probe**"
 METAPACKAGE_HEADER = "**assuming the metapackages are rebuilt**"
-CONTENTS_HEADER = "**seeds affected through what they inherit**"
+# Marks a section as what a seed *holds* rather than what it newly
+# accounts for.  Spelled out rather than abbreviated: someone reading
+# this in a merge proposal has no key to consult.
+CONTENTS_LABEL = " (including inherited seeds)"
 
 _PRESENCE_LABELS = {
     NEW_SEED: " (new seed)",
@@ -161,26 +164,23 @@ def format_retained(retained):
 
 
 def format_contents(contents):
-    """Say what each seed's contents gained and lost.
+    """Sections for what each affected seed holds, one package per line.
 
-    The per-seed sections below say what each seed newly accounts for, which
-    is not the same as what it holds: germinate lists a package only in the
-    seed that first pulls it in, so a seed can lose something by losing it
-    from a seed it inherits, without that showing in its own section.  Only
-    those seeds appear here.
+    The per-seed sections say what each seed newly accounts for, which is not
+    what it contains: germinate lists a package only in the seed that first
+    pulls it in, so a seed can lose something by losing it from a seed it
+    inherits, without that showing in its own section.  Only those seeds
+    appear here, in the same shape as every other section -- a header and one
+    package a line -- because a wrapped prose list is something you have to
+    read where a column is something you can scan.
     """
-    if not contents:
-        return []
-    lines = [CONTENTS_HEADER]
-    for entry in contents:
-        for verb, packages in (("loses", entry.lost), ("gains", entry.gained)):
-            if packages:
-                lines.extend(
-                    _wrap(
-                        "%s %s %s" % (entry.name, verb, ", ".join(packages)),
-                        indent="",
-                    )
-                )
+    return [_format_contents_section(entry) for entry in contents]
+
+
+def _format_contents_section(entry):
+    lines = ["**%s**%s" % (entry.name, CONTENTS_LABEL)]
+    lines.extend("+%s" % pkg for pkg in entry.gained)
+    lines.extend("-%s" % pkg for pkg in entry.lost)
     return lines
 
 
@@ -261,13 +261,19 @@ def format_diff(
         sections.append(metapackage_lines)
     if diff.changed:
         sections.append(_format_section(diff.global_diff, NO_GLOBAL_CHANGES))
-        contents_lines = format_contents(diff.contents)
-        if contents_lines:
-            sections.append(contents_lines)
-        for seed_diff in diff.changed_seeds:
-            sections.append(
-                _format_section(seed_diff, whole_lists=whole_seed_lists)
-            )
+        # One section per seed.  Where what a seed holds changed differently
+        # from what it accounts for, that is the section worth having: the
+        # other would say the same seed both gained and lost packages, which
+        # is true and unreadable.
+        contents = {entry.name: entry for entry in diff.contents}
+        for seed_diff in diff.seeds:
+            entry = contents.get(seed_diff.name)
+            if entry is not None:
+                sections.append(_format_contents_section(entry))
+            elif seed_diff.changed:
+                sections.append(
+                    _format_section(seed_diff, whole_lists=whole_seed_lists)
+                )
     else:
         sections.append([NO_CHANGES])
 

@@ -63,20 +63,22 @@ therefore lose a package by losing it from something it inherits, without that
 showing anywhere in its own section — and "would an image built from this seed
 still have curl?" is not a question the per-seed sections answer.
 
-So a further section reports what each seed *contains*, its inherited seeds
-included:
+So where those differ, the seed's section reports what it *contains* instead,
+marked as such:
 
 ```
-**seeds affected through what they inherit**
-cloud-minimal loses curl, libbrotli1, libcurl4t64, libldap-common, ...
-server-minimal loses curl, libbrotli1, libcurl4t64, libldap-common, ...
-server-ship-live loses curl, pollinate, xxd
+**server-minimal** (including inherited seeds)
+-curl
+-libcurl4t64
+-pollinate
+...
 ```
 
-Only seeds whose contents change differently from their own section appear
-here; otherwise it would repeat the section below it. A seed the change added
-or removed never appears, since it gains or loses everything it inherits by
-definition and its label already says so.
+Each seed appears once. Where what it holds changed differently from what it
+accounts for, that is the section you get, because showing both would say the
+same seed gained and lost packages in the same breath — true, and unreadable.
+A seed the change added or removed is never reported this way, since it gains
+or loses everything it inherits by definition and its label already says so.
 
 Exit status is 0 whenever both germinate runs succeeded, whether or not any
 differences were found, and nonzero if germinate or the tool itself failed.
