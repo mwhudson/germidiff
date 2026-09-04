@@ -31,6 +31,7 @@ __all__ = [
     "inherited_seeds",
     "parse_inheritance",
     "parse_structure",
+    "parse_structure_text",
     "required_branches",
     "seed_names_from_structure_output",
 ]
@@ -47,15 +48,25 @@ def parse_structure(path):
     list of seed names declared in the file and ``includes`` is the list of
     branches named by ``include`` lines, both in file order.
     """
-    seed_order = []
-    includes = []
     try:
         with open(path, encoding="UTF-8", errors="replace") as f:
-            lines = f.readlines()
+            text = f.read()
     except OSError as e:
         raise StructureError("could not read %s: %s" % (path, e))
+    return parse_structure_text(text)
 
-    for line in lines:
+
+def parse_structure_text(text):
+    """Parse the contents of a ``STRUCTURE`` file.
+
+    The same as :func:`parse_structure`, for a file we already have in hand
+    rather than on disk -- which is how a collection's ``include`` lines are
+    read out of a git ref that is not checked out anywhere.
+    """
+    seed_order = []
+    includes = []
+
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue

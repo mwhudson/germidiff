@@ -96,61 +96,12 @@ differences, and nonzero if anything went wrong.
 )
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        prog="germidiff",
-        description=DESCRIPTION,
-        epilog=EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--version", action="version", version="%(prog)s " + VERSION
-    )
-    parser.add_argument(
-        "seed_repo",
-        metavar="SEED-REPO",
-        help="git repo of the seed collection under test",
-    )
-    parser.add_argument(
-        "old_ref", metavar="OLD-REF", help="git ref to diff from"
-    )
-    parser.add_argument(
-        "new_ref", metavar="NEW-REF", help="git ref to diff to"
-    )
-    parser.add_argument(
-        "chdist",
-        metavar="CHDIST",
-        help="chdist providing the archive metadata for both runs",
-    )
+def add_analysis_options(parser):
+    """Add the options that shape the analysis rather than choose its inputs.
 
-    parser.add_argument(
-        "-s",
-        "--seed-dist",
-        metavar="BRANCH",
-        help="branch name of the collection under test, as it would appear "
-        "in an 'include' line (default: looked up in the collection map by "
-        "path, falling back to the repo's directory name)",
-    )
-    parser.add_argument(
-        "--collection-map",
-        metavar="FILE",
-        help="ini file mapping seed collection branch names to local "
-        "checkouts (default: the first of the paths listed below that "
-        "exists)",
-    )
-    parser.add_argument(
-        "--collection",
-        metavar="BRANCH=DIR",
-        action="append",
-        default=[],
-        help="add or override one collection map entry; repeatable",
-    )
-    parser.add_argument(
-        "--chdist-base",
-        metavar="DIR",
-        help="directory holding chdists (default: $CHDIST_HOME, or "
-        "~/.chdist)",
-    )
+    Shared with germidiff-mp, which works out what to germinate from a merge
+    proposal but offers the same control over what is done with it.
+    """
     parser.add_argument(
         "-a",
         "--arch",
@@ -224,6 +175,64 @@ def parse_args(argv=None):
         action="store_true",
         help="report progress on stderr",
     )
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="germidiff",
+        description=DESCRIPTION,
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version", action="version", version="%(prog)s " + VERSION
+    )
+    parser.add_argument(
+        "seed_repo",
+        metavar="SEED-REPO",
+        help="git repo of the seed collection under test",
+    )
+    parser.add_argument(
+        "old_ref", metavar="OLD-REF", help="git ref to diff from"
+    )
+    parser.add_argument(
+        "new_ref", metavar="NEW-REF", help="git ref to diff to"
+    )
+    parser.add_argument(
+        "chdist",
+        metavar="CHDIST",
+        help="chdist providing the archive metadata for both runs",
+    )
+
+    parser.add_argument(
+        "-s",
+        "--seed-dist",
+        metavar="BRANCH",
+        help="branch name of the collection under test, as it would appear "
+        "in an 'include' line (default: looked up in the collection map by "
+        "path, falling back to the repo's directory name)",
+    )
+    parser.add_argument(
+        "--collection-map",
+        metavar="FILE",
+        help="ini file mapping seed collection branch names to local "
+        "checkouts (default: the first of the paths listed below that "
+        "exists)",
+    )
+    parser.add_argument(
+        "--collection",
+        metavar="BRANCH=DIR",
+        action="append",
+        default=[],
+        help="add or override one collection map entry; repeatable",
+    )
+    parser.add_argument(
+        "--chdist-base",
+        metavar="DIR",
+        help="directory holding chdists (default: $CHDIST_HOME, or "
+        "~/.chdist)",
+    )
+    add_analysis_options(parser)
 
     args = parser.parse_args(argv)
     if args.work_dir:

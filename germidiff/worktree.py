@@ -23,6 +23,8 @@ __all__ = [
     "GitError",
     "check_repo",
     "describe_head",
+    "git",
+    "merge_base",
     "resolve_ref",
     "worktrees",
 ]
@@ -34,8 +36,24 @@ class GitError(Exception):
     """A git command failed."""
 
 
-def _git(repo, *args):
-    command = ["git", "-C", repo] + list(args)
+def git(*args, **kwargs):
+    """Run a git command, returning its stdout with whitespace stripped.
+
+    ``repo`` names a working tree to run in; without it git runs in the
+    current directory, which is what cloning a repo that does not exist yet
+    needs.  A nonzero exit raises GitError carrying git's own message, since
+    git says what went wrong far better than we could guess.
+    """
+    repo = kwargs.pop("repo", None)
+    if kwargs:
+        raise TypeError(
+            "unexpected keyword argument %r" % sorted(kwargs)[0]
+        )
+    command = ["git"]
+    if repo is not None:
+        command += ["-C", repo]
+    command += list(args)
+    _logger.debug("running %s", " ".join(command))
     proc = subprocess.run(
         command, capture_output=True, encoding="UTF-8", errors="replace"
     )
@@ -45,6 +63,10 @@ def _git(repo, *args):
             % (" ".join(command), proc.returncode, proc.stderr.strip())
         )
     return proc.stdout.strip()
+
+
+def _git(repo, *args):
+    return git(*args, repo=repo)
 
 
 def check_repo(repo):
@@ -62,6 +84,23 @@ def resolve_ref(repo, ref):
         return _git(repo, "rev-parse", "--verify", "%s^{commit}" % ref)
     except GitError:
         raise GitError("%s: no such commit in %s" % (ref, repo))
+
+
+def merge_base(repo, *commits):
+    """The best common ancestor of some commits.
+
+    This is the commit a merge proposal branched from, and so the right
+    "before" for diffing one: comparing against the target's tip instead
+    would blame the proposal for everything that landed on the target while
+    it was waiting.  It is also what Launchpad diffs the proposal against, so
+    the two reports describe the same change.
+    """
+    try:
+        return _git(repo, "merge-base", *commits)
+    except GitError:
+        raise GitError(
+            "%s have no common ancestor in %s" % (" and ".join(commits), repo)
+        )
 
 
 def describe_head(directory):
