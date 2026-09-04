@@ -36,6 +36,7 @@ from germidiff import VERSION, cli
 from germidiff.chdist import (
     ChdistError,
     DEFAULT_MIRROR,
+    chdist_base,
     components_for_collection,
     ensure_chdist,
 )
@@ -88,6 +89,10 @@ a chdist called after the series alone, and flavours germinate against the
 whole archive from one called SERIES-all.  Germinate takes its components
 from the chdist and nothing else, so an existing chdist offering the wrong
 ones is refused rather than used.
+
+Those chdists are germidiff's own, kept under --chdist-base rather than in
+the ~/.chdist the chdist tool uses, so that creating and updating them
+cannot disturb any chdist you keep for yourself under the same name.
 
 Exits 0 when the germinate runs succeeded, whether or not there were any
 differences, and nonzero if anything went wrong.
@@ -155,8 +160,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--chdist-base",
         metavar="DIR",
-        help="directory holding chdists (default: $CHDIST_HOME, or "
-        "~/.chdist)",
+        help="directory germidiff keeps its chdists in (default: "
+        "%s); pass ~/.chdist to use the ones you made yourself" % (
+            chdist_base(),
+        ),
     )
     parser.add_argument(
         "--mirror",

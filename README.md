@@ -9,9 +9,9 @@ and diffs the resulting expanded per-seed package lists.
 germidiff <seed-repo> <old-ref> <new-ref> <chdist-name> [options]
 ```
 
-Both runs use the same archive metadata (your existing `chdist`) and the same
-checkouts of any other seed collections involved, so the diff reflects only
-the seed change and not archive drift.
+Both runs use the same archive metadata (a `chdist`, kept in a directory of
+germidiff's own) and the same checkouts of any other seed collections
+involved, so the diff reflects only the seed change and not archive drift.
 
 To diff a Launchpad merge proposal, and let germidiff work out the refs, the
 collections and the chdist for itself:
@@ -212,7 +212,8 @@ different germination.
 * `germinate` on `$PATH` (or named with `--germinate`).
 * `git`.
 * A `chdist` for the series you are germinating against, as created by
-  `chdist create` from devscripts. `germidiff-mp` will create one itself.
+  `chdist create` from devscripts, in germidiff's own chdist directory.
+  `germidiff-mp` will create one itself.
 * For `germidiff-mp` only: `chdist` on `$PATH`, and network access to
   Launchpad and the archive.
 
@@ -220,19 +221,36 @@ different germination.
 
 ### A chdist
 
-germidiff does not fetch or pin an archive snapshot. It uses an existing
-per-series chdist through germinate's `--apt-config`:
+germidiff does not fetch or pin an archive snapshot. It reads the archive
+through a per-series chdist, handed to germinate as `--apt-config`.
+
+Chdists live in a directory of germidiff's own, `~/.cache/germidiff/chdists`
+(`$XDG_CACHE_HOME/germidiff/chdists`), and *not* in the `~/.chdist` the
+`chdist` tool keeps for you. `germidiff-mp` creates and updates chdists named
+after the series it is germinating — exactly the names you would have picked
+by hand — so sharing a directory would mean it either refused to run because
+yours carries the wrong components, or ran `apt-get update` on one you were
+deliberately holding still. `$CHDIST_HOME` is ignored for the same reason.
+
+To make one for `germidiff` itself:
 
 ```
-chdist create questing
-$EDITOR ~/.chdist/questing/etc/apt/sources.list
-chdist apt-get questing update
+chdist -d ~/.cache/germidiff/chdists create questing
+$EDITOR ~/.cache/germidiff/chdists/questing/etc/apt/sources.list
+chdist -d ~/.cache/germidiff/chdists apt-get questing update
 ```
 
 Pass the chdist name as the fourth argument. Both runs use it, so the archive
-is identical on each side. `--chdist-base` overrides where chdists are looked
-for (default `$CHDIST_HOME`, or `~/.chdist`); the argument may also be a path
-to a chdist directory or straight to an `apt.conf`.
+is identical on each side.
+
+To use a chdist you already have, pass its path rather than its name — the
+fourth argument may be a chdist directory or an `apt.conf` — or move the whole
+search with `--chdist-base ~/.chdist`, which both commands accept:
+
+```
+germidiff ~/seeds/ubuntu HEAD~1 HEAD ~/.chdist/questing
+germidiff ~/seeds/ubuntu HEAD~1 HEAD questing --chdist-base ~/.chdist
+```
 
 ### Components
 
@@ -246,8 +264,8 @@ knows which collection wants which — you choose by naming the right chdist, so
 keep one per component set:
 
 ```
-chdist create stonking          # deb ... stonking main restricted
-chdist create stonking-all      # deb ... stonking main restricted universe multiverse
+chdist -d ~/.cache/germidiff/chdists create stonking      # deb ... stonking main restricted
+chdist -d ~/.cache/germidiff/chdists create stonking-all  # deb ... stonking main restricted universe multiverse
 ```
 
 Getting it wrong does not fail. Germinating the platform collection against an
@@ -257,7 +275,7 @@ from 2124 packages to 7144. `-v` reports the components actually used, which is
 the cheapest way to catch it:
 
 ```
-germidiff: archive metadata: ~/.chdist/stonking/etc/apt/apt.conf (amd64, main restricted)
+germidiff: archive metadata: ~/.cache/germidiff/chdists/stonking/etc/apt/apt.conf (amd64, main restricted)
 ```
 
 ### Architecture
@@ -422,12 +440,14 @@ importable.
 For a check against a real archive, point it at a real chdist:
 
 ```
-chdist create stonking
+base=~/.cache/germidiff/chdists
+mkdir -p "$base"
+chdist -d "$base" create stonking
 printf 'deb http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
-    > ~/.chdist/stonking/etc/apt/sources.list
+    > "$base"/stonking/etc/apt/sources.list
 printf 'deb-src http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
-    >> ~/.chdist/stonking/etc/apt/sources.list
-chdist apt stonking update
+    >> "$base"/stonking/etc/apt/sources.list
+chdist -d "$base" apt stonking update
 
 germidiff ~/seeds/ubuntu main my-branch stonking
 ```
@@ -469,7 +489,9 @@ pay for the seed history once.
 **The chdist is named for the series and its components.** The `ubuntu` and
 `platform` collections germinate against main and restricted, and use a chdist
 named for the series alone; flavours germinate against the whole archive, from
-one named `SERIES-all`. A missing chdist is created and updated. An existing
+one named `SERIES-all`. A missing chdist is created and updated, under
+germidiff's own chdist directory rather than your `~/.chdist`, so that a
+chdist of yours with the same name is neither read nor touched. An existing
 one whose components do not match is *refused*, because germinate ignores
 `--components` when it is given an `--apt-config` — the chdist alone decides
 what a run can see, so germinating the platform seeds against a chdist

@@ -64,11 +64,21 @@ class ChdistError(Exception):
 
 
 def chdist_base(base=None):
-    """Where chdists live: the same answer the ``chdist`` tool gives."""
+    """Where germidiff's chdists live.
+
+    Deliberately not ``$CHDIST_HOME`` or ``~/.chdist``.  germidiff creates
+    chdists of its own, named after the series and its components, and those
+    names are exactly the ones somebody germinating by hand would have picked
+    too -- so sharing a directory with the chdists you keep for yourself
+    means germidiff either refuses to run because yours carries the wrong
+    components, or quietly updates a chdist you were holding still.  It keeps
+    its own instead, and reaches yours only when told to.
+    """
     if base is None:
-        base = os.environ.get("CHDIST_HOME")
-    if not base:
-        base = os.path.join(os.path.expanduser("~"), ".chdist")
+        cache_home = os.environ.get("XDG_CACHE_HOME")
+        if not cache_home:
+            cache_home = os.path.join(os.path.expanduser("~"), ".cache")
+        base = os.path.join(cache_home, "germidiff", "chdists")
     return os.path.abspath(os.path.expanduser(base))
 
 
@@ -189,6 +199,14 @@ def ensure_chdist(
             "creating chdist %s for %s %s",
             name, series, " ".join(components),
         )
+        # chdist resolves its data directory with abs_path(), which gives up
+        # on a directory that does not exist yet and leaves it creating the
+        # chdist in the wrong place entirely.  Ours is somewhere it made no
+        # sense for anything else to have created, so make it first.
+        try:
+            os.makedirs(base, exist_ok=True)
+        except OSError as e:
+            raise ChdistError("could not create %s: %s" % (base, e))
         _run_chdist(
             base, "-a", arch, "create", name, mirror, series, *components
         )

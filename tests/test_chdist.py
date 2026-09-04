@@ -41,6 +41,12 @@ with open(os.environ["CHDIST_LOG"], "a") as log:
     log.write(" ".join(args) + "\\n")
 
 base = args[args.index("-d") + 1]
+if not os.path.isdir(base):
+    # The real chdist resolves its data directory with abs_path(), which
+    # gives up on one that does not exist and leaves it working from an
+    # undefined path.
+    sys.stderr.write("can't open dir %s\\n" % base)
+    sys.exit(1)
 if "create" in args:
     rest = args[args.index("create") + 1:]
     name, mirror, series, components = rest[0], rest[1], rest[2], rest[3:]
@@ -90,10 +96,19 @@ class TestChdistBase(TestCase):
     def test_prefers_the_argument(self):
         self.assertEqual("/somewhere", chdist_base("/somewhere"))
 
-    def test_falls_back_to_chdist_home(self):
+    def test_defaults_to_a_directory_of_its_own(self):
+        os.environ["XDG_CACHE_HOME"] = "/cache"
+        self.addCleanup(os.environ.pop, "XDG_CACHE_HOME", None)
+        self.assertEqual("/cache/germidiff/chdists", chdist_base())
+
+    def test_ignores_chdist_home(self):
+        # The whole point of keeping our own: creating and updating chdists
+        # named after the series must not touch the ones you made by hand.
         os.environ["CHDIST_HOME"] = "/from/env"
         self.addCleanup(os.environ.pop, "CHDIST_HOME", None)
-        self.assertEqual("/from/env", chdist_base())
+        os.environ["XDG_CACHE_HOME"] = "/cache"
+        self.addCleanup(os.environ.pop, "XDG_CACHE_HOME", None)
+        self.assertEqual("/cache/germidiff/chdists", chdist_base())
 
 
 class TestSourcesComponents(TestCase):
@@ -195,6 +210,17 @@ class TestEnsureChdist(TestCase):
         self.assertIn("create resolute", " ".join(calls))
         self.assertIn("main restricted", calls[0])
         self.assertIn("apt-get resolute update", calls[1])
+
+    def test_creates_the_base_directory_it_was_pointed_at(self):
+        # germidiff's own chdist directory does not exist until the first
+        # run, and chdist itself cannot resolve a data directory that is not
+        # there yet.
+        base = os.path.join(self.temp_dir, "fresh", "chdists")
+
+        ensure_chdist("resolute", MAIN_COMPONENTS, "amd64", base=base)
+
+        self.assertIn("-d %s" % base, self.calls()[0])
+        self.assertTrue(os.path.isdir(base))
 
     def test_a_created_chdist_is_updated_even_when_asked_not_to(self):
         # It has no package lists at all, so there is nothing to reuse.

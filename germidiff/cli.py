@@ -23,6 +23,7 @@ import sys
 import tempfile
 
 from germidiff import VERSION
+from germidiff.chdist import chdist_base
 from germidiff.collection_map import (
     CollectionMapError,
     DEFAULT_CONFIG_PATHS,
@@ -201,7 +202,9 @@ def parse_args(argv=None):
     parser.add_argument(
         "chdist",
         metavar="CHDIST",
-        help="chdist providing the archive metadata for both runs",
+        help="chdist providing the archive metadata for both runs: the name "
+        "of one under --chdist-base, or the path to any chdist directory or "
+        "apt.conf",
     )
 
     parser.add_argument(
@@ -229,8 +232,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--chdist-base",
         metavar="DIR",
-        help="directory holding chdists (default: $CHDIST_HOME, or "
-        "~/.chdist)",
+        help="directory germidiff keeps its chdists in (default: "
+        "%s); pass ~/.chdist to use the ones you made yourself" % (
+            chdist_base(),
+        ),
     )
     add_analysis_options(parser)
 
