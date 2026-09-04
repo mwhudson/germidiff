@@ -414,7 +414,7 @@ def run(args):
                 try:
                     rebuilt = probe_cuts(
                         [
-                            (edge.metapackage, "Depends", edge.package)
+                            (edge.metapackage, edge.field, edge.package)
                             for edge in metapackages
                         ],
                         new_seed_base,

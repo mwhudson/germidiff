@@ -2,9 +2,10 @@
 
 A seed change does not reach the archive on its own.  ``ubuntu-meta`` and its
 siblings are built by ``germinate-update-metapackage``, which sets each
-metapackage's ``Depends`` from the explicit entries of the seed it stands for
-(and of any seed named in that seed's ``Task-Seeds:`` header).  Those
-metapackages are then in the archive that the next germination reads.
+metapackage's ``Depends`` from the explicit entries of the seed it stands for,
+and its ``Recommends`` from that seed's ``seed-recommends`` entries (in both
+cases together with any seed named in the seed's ``Task-Seeds:`` header).
+Those metapackages are then in the archive that the next germination reads.
 
 So dropping a seed entry often looks like nothing happened: the package is
 still pulled in, by a metapackage built from the *previous* state of these
@@ -30,13 +31,22 @@ module works out which of those dependencies are living on borrowed time.
 import os
 import re
 
-from germidiff.listfile import parse_list_file
+from germidiff.listfile import Reason, parse_list_file
 
 __all__ = [
     "PendingEdge",
     "pending_edges",
     "seed_headers",
 ]
+
+# The relationship a seed entry becomes in the generated metapackage, keyed
+# by how germinate says the archive's metapackage holds the package today.
+# Anything else -- a seed reason, a build-dependency -- is not a metapackage
+# dependency that rebuilding would rewrite.
+_FIELD_FOR_KIND = {
+    Reason.DEPENDS: "Depends",
+    Reason.RECOMMENDS: "Recommends",
+}
 
 _TASK_SEEDS = re.compile(r"^Task-Seeds:\s*(.*)", re.I)
 _TASK_METAPACKAGE = re.compile(r"^Task-Metapackage:\s*(.*)", re.I)
@@ -45,25 +55,30 @@ _TASK_METAPACKAGE = re.compile(r"^Task-Metapackage:\s*(.*)", re.I)
 class PendingEdge:
     """A metapackage dependency that regenerating the metapackages removes."""
 
-    def __init__(self, metapackage, package, seed):
+    def __init__(self, metapackage, package, seed, field="Depends"):
         self.metapackage = metapackage
         self.package = package
         #: The seed the metapackage is built from, which stopped naming it.
         self.seed = seed
+        #: Which relationship holds it: "Depends" or "Recommends".
+        self.field = field
 
     def __eq__(self, other):
         if not isinstance(other, PendingEdge):
             return NotImplemented
-        return (self.metapackage, self.package) == (
+        return (self.metapackage, self.package, self.field) == (
             other.metapackage,
             other.package,
+            other.field,
         )
 
     def __hash__(self):
-        return hash((self.metapackage, self.package))
+        return hash((self.metapackage, self.package, self.field))
 
     def __repr__(self):  # pragma: no cover - debugging aid
-        return "<PendingEdge %s -> %s>" % (self.metapackage, self.package)
+        return "<PendingEdge %s -%s-> %s>" % (
+            self.metapackage, self.field, self.package
+        )
 
 
 def seed_headers(out_dir, seedname):
@@ -92,12 +107,22 @@ def seed_headers(out_dir, seedname):
 
 
 def _entry_union(out_dir, seeds):
-    """The explicit entries of a metapackage's seeds, which become Depends."""
+    """Everything a metapackage's seeds name, by either relationship.
+
+    Both lists are taken together, because what matters is whether the
+    rebuilt metapackage would mention the package at all.  A package moved
+    from a seed's entries to its seed-recommends has not been dropped: it
+    comes back as a Recommends, and reporting it as pending removal would be
+    telling the reviewer their change does something it does not.
+    """
     entries = set()
     for seed in seeds:
-        entries.update(
-            parse_list_file(os.path.join(out_dir, "%s.seed" % seed))
-        )
+        for suffix in ("seed", "seed-recommends"):
+            entries.update(
+                parse_list_file(
+                    os.path.join(out_dir, "%s.%s" % (seed, suffix))
+                )
+            )
     return entries
 
 
@@ -116,9 +141,7 @@ def _names_seed(metapackage, seed, out_dir, declared):
         return metapackage == declared
     if not metapackage.endswith("-%s" % seed):
         return False
-    return metapackage in parse_list_file(
-        os.path.join(out_dir, "%s.seed" % seed)
-    )
+    return metapackage in _entry_union(out_dir, [seed])
 
 
 def pending_edges(old_out_dir, new_out_dir, seed_names, retained):
@@ -129,12 +152,18 @@ def pending_edges(old_out_dir, new_out_dir, seed_names, retained):
     collection, and whether that seed stopped naming the package too.  When
     both hold, the dependency exists only because the archive's metapackages
     predate this change.
+
+    Both relationships count.  A metapackage's Recommends is generated from
+    its seed's seed-recommends exactly as its Depends is generated from the
+    seed's entries, and germinate follows Recommends, so an out-of-date
+    Recommends hides a change just as completely as an out-of-date Depends.
     """
     edges = []
     for entry in retained:
         for reason in entry.reasons:
             holder = reason.holder
-            if holder is None:
+            field = _FIELD_FOR_KIND.get(reason.kind)
+            if holder is None or field is None:
                 continue
             for seed in seed_names:
                 task_seeds, declared = seed_headers(new_out_dir, seed)
@@ -144,7 +173,9 @@ def pending_edges(old_out_dir, new_out_dir, seed_names, retained):
                 was = _entry_union(old_out_dir, covered)
                 now = _entry_union(new_out_dir, covered)
                 if entry.package in was and entry.package not in now:
-                    edge = PendingEdge(holder, entry.package, seed)
+                    edge = PendingEdge(holder, entry.package, seed, field)
                     if edge not in edges:
                         edges.append(edge)
-    return sorted(edges, key=lambda e: (e.package, e.metapackage))
+    return sorted(
+        edges, key=lambda e: (e.package, e.metapackage, e.field)
+    )
