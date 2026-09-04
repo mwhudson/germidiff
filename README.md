@@ -13,6 +13,15 @@ Both runs use the same archive metadata (your existing `chdist`) and the same
 checkouts of any other seed collections involved, so the diff reflects only
 the seed change and not archive drift.
 
+To diff a Launchpad merge proposal, and let germidiff work out the refs, the
+collections and the chdist for itself:
+
+```
+germidiff-mp <merge-proposal-url> [options]
+```
+
+See [Diffing a merge proposal](#diffing-a-merge-proposal) below.
+
 Output is plain text with light markdown-ish styling, plain enough to paste
 straight into a Launchpad merge proposal comment:
 
@@ -203,7 +212,9 @@ different germination.
 * `germinate` on `$PATH` (or named with `--germinate`).
 * `git`.
 * A `chdist` for the series you are germinating against, as created by
-  `chdist create` from devscripts.
+  `chdist create` from devscripts. `germidiff-mp` will create one itself.
+* For `germidiff-mp` only: `chdist` on `$PATH`, and network access to
+  Launchpad and the archive.
 
 ## Setting up
 
@@ -421,15 +432,68 @@ chdist apt stonking update
 germidiff ~/seeds/ubuntu main my-branch stonking
 ```
 
-## Launchpad integration
+## Diffing a merge proposal
 
-Out of scope here. The intended shape is a separate wrapper that resolves a
-merge proposal's source and target branches to git refs, invokes
-`germidiff` as a subprocess, captures stdout, and posts it as an MP
-comment via launchpadlib. The CLI contract — arguments in, plain text on
-stdout, exit status distinguishing "ran fine" from "broke" — is meant to keep
-that wrapper thin. Note that germinate itself logs to stdout;
-germidiff captures that and keeps its own stdout to the diff alone.
+`germidiff-mp` takes a Launchpad merge proposal and does the rest:
+
+```
+germidiff-mp https://code.launchpad.net/~gjolly/ubuntu-seeds/+git/ubuntu/+merge/509106
+```
+
+It reads the proposal, works out what to germinate, fetches it, makes sure
+there is a chdist to read the archive from, and writes the report to stdout.
+Nothing is posted back to Launchpad.
+
+The proposal answers most of the questions. The *target* repository names the
+collection — a proposal arrives from a fork that may be called anything, but
+what it proposes to change is the target — and the target branch names the
+series, so a proposal against `+git/ubuntu` at `refs/heads/resolute` is a
+change to `ubuntu.resolute`.
+
+Three things are worth knowing about the rest.
+
+**It diffs from the merge base**, not from the target's tip. Anything that
+landed on the target while the proposal waited is not part of what the
+proposal does, and reporting it as though it were would blame this change for
+someone else's packages. That is also the comparison Launchpad's own diff
+shows, so the report and the diff beside it describe the same change.
+
+**Included collections are cloned into a reusable cache**, `~/.cache/germidiff/seeds`
+by default, laid out as `platform.resolute` and so on — the same layout seed
+branches are usually checked out in, and the one germidiff already looks in
+for a collection's siblings. Both sides of the change get a say in what is
+needed, since adding or dropping an `include` line is an ordinary seed change.
+Reusing the directory is the point: running over a stream of proposals should
+pay for the seed history once.
+
+**The chdist is named for the series and its components.** The `ubuntu` and
+`platform` collections germinate against main and restricted, and use a chdist
+named for the series alone; flavours germinate against the whole archive, from
+one named `SERIES-all`. A missing chdist is created and updated. An existing
+one whose components do not match is *refused*, because germinate ignores
+`--components` when it is given an `--apt-config` — the chdist alone decides
+what a run can see, so germinating the platform seeds against a chdist
+carrying universe quietly resolves into packages that are not there for them
+and produces a plausible report that is wrong. `--no-check-components` goes
+ahead anyway, and `--chdist NAME` takes one exactly as it stands.
+
+`--dry-run` fetches everything and prints what it would germinate, which is
+the cheap way to check the resolution before paying for two germinations.
+
+Reads go straight to the Launchpad API over HTTP rather than through
+launchpadlib: this needs three fields of one public object, and anonymous
+reads have no use for an OAuth stack. (launchpadlib also fails outright behind
+an HTTP proxy that plain requests get through.)
+
+### Posting
+
+Still out of scope, and deliberately separate: resolving a proposal needs no
+credentials and can be run against anything, while commenting on one needs an
+account and is hard to take back. Launchpad has no API for editing or deleting
+a merge proposal comment, so anything that posts automatically needs to
+recognise its own previous comment and stay quiet when the report has not
+changed — otherwise a branch pushed five times collects five identical walls
+of package names.
 
 ## Licence
 

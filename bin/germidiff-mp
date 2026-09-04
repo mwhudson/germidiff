@@ -1,0 +1,31 @@
+#! /usr/bin/env python3
+"""Report the seed change a Launchpad merge proposal makes."""
+
+# Copyright (C) 2026 Canonical Ltd.
+#
+# germidiff is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 3, as
+# published by the Free Software Foundation.
+#
+# germidiff is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with germidiff; see the file COPYING.  If not, see
+# <https://www.gnu.org/licenses/>.
+
+import sys
+
+try:
+    from germidiff.mpcli import main
+except ImportError:
+    # Running from the source tree?
+    import os
+
+    sys.path.insert(0, os.path.join(sys.path[0], os.pardir))
+    from germidiff.mpcli import main
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
