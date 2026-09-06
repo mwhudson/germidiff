@@ -42,11 +42,12 @@ and 12 more, already pulled in by other seeds
 62 packages, all still pulled in by other seeds
 ```
 
-The global section comes first and is the union of expanded packages across
-all seeds, old versus new. It is computed from the two unions rather than by
-summing the per-seed diffs, so a package dropped from one seed but still
-pulled in by another does not show as a net removal — it shows as a per-seed
-change under an explicitly empty global section.
+The global section comes first — below the metapackage note described later,
+where there is one — and is the union of expanded packages across all seeds,
+old versus new. It is computed from the two unions rather than by summing the
+per-seed diffs, so a package dropped from one seed but still pulled in by
+another does not show as a net removal — it shows as a per-seed change under
+an explicitly empty global section.
 
 Per-seed sections follow, one for each seed whose expanded list changed. A
 seed that exists in only one of the two runs is not an error; it is labelled
@@ -60,9 +61,10 @@ one line, not 62. So the section leads with the packages that genuinely
 entered or left the archive — the ones that also appear under `global` — and
 counts the rest. `--whole-seed-lists` restores the full listing.
 
-Between the two comes a section for seeds affected only through what they
-inherit, described below, and last the retention check, which reports packages
-the change stopped seeding but did not actually remove.
+A seed affected only through what it inherits is reported in its own place in
+that order, marked as such; the next section says why. Last comes the retention
+check, which reports packages the change stopped seeding but did not actually
+remove.
 
 ### What a seed contains, as against what it accounts for
 
@@ -135,24 +137,27 @@ from germinate's own `Why` column.
 
 A seed change does not reach the archive on its own. `ubuntu-meta` and its
 siblings are built by `germinate-update-metapackage`, which sets each
-metapackage's `Depends` from the explicit entries of the seed it stands for
-(and of any seed in that seed's `Task-Seeds:` header). Those metapackages then
-sit in the archive that the *next* germination reads.
+metapackage's `Depends` from the explicit entries of the seed it stands for,
+and its `Recommends` from that seed's `seed-recommends` entries — in both cases
+together with any seed named in that seed's `Task-Seeds:` header. Those
+metapackages then sit in the archive that the *next* germination reads.
 
 So dropping a seed entry often looks like nothing happened — the package is
 still pulled in, by a metapackage built from the previous state of these very
-seeds. germidiff spots that and says so:
-
-```
-**held up only by metapackages built from these seeds**
-! pollinate is still pulled in by ubuntu-server-minimal, built from the server-minimal seed
-```
+seeds. germidiff spots those dependencies.
 
 It is not a guess. A holder counts only when it is named by the seed's
 `Task-Metapackage:` header, or its name ends in `-<seed>` *and* it is itself an
-explicit entry of that seed; and only when the package was in that seed's
-entries before the change and is not after — which is exactly the condition
-under which regeneration drops the dependency.
+entry of that seed; and only when the package was named by that seed before the
+change and is not after — which is exactly the condition under which
+regeneration drops the dependency.
+
+Both relationships count, and a seed's two entry lists are read as one. A stale
+`Recommends` hides a change exactly as completely as a stale `Depends`, since
+germinate follows both; but a package moved from a seed's entries to its
+`seed-recommends` has not been dropped at all — it comes back as a `Recommends`
+— so that is no edge, and the probe below cuts whichever relationship the
+archive actually has.
 
 Having found those, germidiff germinates the new side again without them, and
 diffs against *that* — so there is one diff, saying what the change does rather
@@ -174,7 +179,9 @@ ubuntu-server-minimal, which are built from these seeds
 
 This runs by default, but only when there is something for it to say;
 `--no-metapackage-probe` turns it off and reports the archive as it stands,
-warning about each dependency being taken at face value.
+warning about each dependency being taken at face value. It is a probe like
+the retention one below, so it needs germinate importable by the same Python,
+and falls back to those same warnings where it is not.
 
 ### Probing it
 
@@ -185,7 +192,9 @@ one dependency removed:
 
 ```
 **retention probe**
-cutting dpkg-dev's Recommends of build-essential removes 5 package(s):
+without dpkg-dev's Recommends on build-essential:
+
+**global**
 -build-essential
 -g++
 -g++-15
@@ -193,7 +202,11 @@ cutting dpkg-dev's Recommends of build-essential removes 5 package(s):
 -g++-x86-64-linux-gnu
 ```
 
-That last part is the bit the cheap check cannot reach: `g++` is held by
+What follows the cut is a diff in the same shape as the main one — global
+first, then a section per affected seed — because it answers the same
+question, and a cut that changes nothing says `nothing changes` instead.
+
+The per-seed part is the bit the cheap check cannot reach: `g++` is held by
 `build-essential` through a hard dependency, so it looks solid until the root
 is cut.
 
@@ -209,7 +222,9 @@ different germination.
 ## Requirements
 
 * Python 3.6 or later; no third-party modules.
-* `germinate` on `$PATH` (or named with `--germinate`).
+* `germinate` on `$PATH` (or named with `--germinate`), and importable by
+  that same Python for the probes — the metapackage one that runs by default
+  as well as `--probe-retention`.
 * `git`.
 * A `chdist` for the series you are germinating against, as created by
   `chdist create` from devscripts, in germidiff's own chdist directory.
@@ -259,9 +274,10 @@ germidiff. Germinate ignores `--components` when given `--apt-config` and
 reads whatever indexes apt has, so germidiff never passes it.
 
 This matters because the platform and ubuntu collections are germinated
-against main and restricted, while flavours use every component. Nothing here
-knows which collection wants which — you choose by naming the right chdist, so
-keep one per component set:
+against main and restricted, while flavours use every component. `germidiff`
+itself does not know which collection wants which — you choose by naming the
+right chdist, so keep one per component set. `germidiff-mp` does know, and
+picks the chdist accordingly — see below.
 
 ```
 chdist -d ~/.cache/germidiff/chdists create stonking      # deb ... stonking main restricted
@@ -447,7 +463,7 @@ printf 'deb http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
     > "$base"/stonking/etc/apt/sources.list
 printf 'deb-src http://archive.ubuntu.com/ubuntu/ stonking main restricted\n' \
     >> "$base"/stonking/etc/apt/sources.list
-chdist -d "$base" apt stonking update
+chdist -d "$base" apt-get stonking update
 
 germidiff ~/seeds/ubuntu main my-branch stonking
 ```
@@ -463,6 +479,16 @@ germidiff-mp https://code.launchpad.net/~gjolly/ubuntu-seeds/+git/ubuntu/+merge/
 It reads the proposal, works out what to germinate, fetches it, makes sure
 there is a chdist to read the archive from, and writes the report to stdout.
 Nothing is posted back to Launchpad.
+
+Two lines above the report say where it came from, since a report pasted
+somewhere else is otherwise a list of package names with nothing to anchor it:
+
+```
+germidiff of https://code.launchpad.net/~gjolly/ubuntu-seeds/+git/ubuntu/+merge/509106
+ubuntu.resolute, 0f3a1c9e4b27..a51d8c0f6e94, against resolute (main restricted)
+```
+
+`--no-header` leaves them off.
 
 The proposal answers most of the questions. The *target* repository names the
 collection — a proposal arrives from a fork that may be called anything, but
