@@ -42,12 +42,6 @@ class TestComponentsForCollection(TestCase):
     def test_flavours_get_the_whole_archive(self):
         self.assertEqual(ALL_COMPONENTS, components_for_collection("kubuntu"))
 
-    def test_overrides_win(self):
-        self.assertEqual(
-            ("main",),
-            components_for_collection("kubuntu", {"kubuntu": ["main"]}),
-        )
-
 
 class TestChdistName(TestCase):
     def test_main_and_restricted_is_the_bare_series(self):

@@ -97,10 +97,8 @@ def update_chdist(name, base=None):
     _run_chdist(chdist_base(base), "apt-get", name, "update")
 
 
-def components_for_collection(collection, overrides=None):
+def components_for_collection(collection):
     """Which archive components a collection's seeds may resolve against."""
-    if overrides and collection in overrides:
-        return tuple(overrides[collection])
     if collection in MAIN_ONLY_COLLECTIONS:
         return MAIN_COMPONENTS
     return ALL_COMPONENTS
@@ -239,8 +237,8 @@ def _check_existing(name, sources, series, components):
     if have is None:
         raise ChdistError(
             "chdist %s does not carry %s (see %s); germidiff will not "
-            "rewrite a chdist you made, so point it at another one with "
-            "--chdist or move this one aside"
+            "rewrite a chdist you made, so move this one aside or point "
+            "--chdist-base at another store"
             % (name, series, sources)
         )
     want = set(components)

@@ -140,7 +140,7 @@ def _quiet_germinate():
     is the authoritative copy (kept with --keep).  Silencing them here does
     not hide a probe going wrong: a probe that fails raises, and one that
     quietly germinates something other than the run being explained is caught
-    by the baseline check in :func:`probe_edges`.
+    by the baseline check in :func:`probe_cuts`.
     """
     logger = logging.getLogger("germinate")
     previous = logger.level
