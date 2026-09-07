@@ -383,7 +383,8 @@ def resolve_chdist(args, seed_dist, chdist=None):
 
 
 def _one_side(
-    args, label, ref, checkout, work_dir, apt_config, branch_dirs, seed_dist
+    args, arch, label, ref, checkout, work_dir, apt_config, branch_dirs,
+    seed_dist,
 ):
     """Run germinate for one side of the diff and read its output back."""
     side_dir = os.path.join(work_dir, label)
@@ -398,7 +399,7 @@ def _one_side(
         seed_base,
         seed_dist,
         apt_config,
-        args.arch,
+        arch,
         extra_args=_germinate_args(args),
         # Only worth writing where it will outlive the run: a failing run
         # reports germinate's output inline anyway.
@@ -424,23 +425,24 @@ def run(args, chdist=None):
 
     chdist, apt_config = resolve_chdist(args, seed_dist, chdist)
     if args.arch is None:
-        args.arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
+        arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
     else:
+        arch = args.arch
         available = architectures_for_apt_config(apt_config)
-        if available and args.arch not in available:
+        if available and arch not in available:
             _logger.warning(
                 "chdist %s carries %s, not %s; germinating for an "
                 "architecture it does not have still succeeds, but the "
                 "result comes from the wrong Packages files",
                 chdist,
                 "/".join(available),
-                args.arch,
+                arch,
             )
     components = components_for_apt_config(apt_config)
     _logger.info(
         "archive metadata: %s (%s, %s)",
         apt_config,
-        args.arch,
+        arch,
         " ".join(components) if components else "components unknown",
     )
 
@@ -494,6 +496,7 @@ def run(args, chdist=None):
 
             old_run, old_out, _ = _one_side(
                 args,
+                arch,
                 "old",
                 old_commit,
                 old_co,
@@ -504,6 +507,7 @@ def run(args, chdist=None):
             )
             new_run, new_out, new_seed_base = _one_side(
                 args,
+                arch,
                 "new",
                 new_commit,
                 new_co,
@@ -539,7 +543,7 @@ def run(args, chdist=None):
                         new_seed_base,
                         seed_dist,
                         apt_config,
-                        args.arch,
+                        arch,
                         baseline=baseline,
                     )
                 except ProbeError as e:
@@ -561,6 +565,11 @@ def run(args, chdist=None):
                         # counterpart on this side; left in place it would
                         # show up in the diff as a removed seed.
                         old_run = old_run.without_extra()
+                        # find_retained reads the original new run's list
+                        # files from new_out; those were written by the run
+                        # the probe replaced, which is the right source of
+                        # "why is this package still here" -- the probed run
+                        # has no files of its own.
                         retained = without_edges(
                             find_retained(old_out, new_out, new_run),
                             metapackages,
@@ -592,7 +601,7 @@ def run(args, chdist=None):
                             new_seed_base,
                             seed_dist,
                             apt_config,
-                            args.arch,
+                            arch,
                             baseline=baseline,
                         )
                     except ProbeError as e:
