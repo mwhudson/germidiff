@@ -54,9 +54,14 @@ def git(*args, **kwargs):
         command += ["-C", repo]
     command += list(args)
     _logger.debug("running %s", " ".join(command))
-    proc = subprocess.run(
-        command, capture_output=True, encoding="UTF-8", errors="replace"
-    )
+    try:
+        proc = subprocess.run(
+            command, capture_output=True, encoding="UTF-8", errors="replace"
+        )
+    except OSError as e:
+        # git is a hard requirement (see README), so fail noisily rather
+        # than letting a FileNotFoundError escape as an unrelated crash.
+        raise GitError("could not run git: %s" % e)
     if proc.returncode != 0:
         raise GitError(
             "%s failed with exit status %d:\n%s"
@@ -111,7 +116,7 @@ def describe_head(directory):
     """
     try:
         return _git(directory, "log", "-1", "--format=%h %s")
-    except (GitError, OSError):
+    except GitError:
         return "not a git checkout"
 
 
