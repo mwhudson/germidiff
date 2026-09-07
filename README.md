@@ -18,14 +18,21 @@ is not there, and refreshed before the runs; there is nothing to set up and
 nothing to choose. Progress goes to standard error and the report to standard
 output, so the report can be redirected on its own.
 
-To diff a Launchpad merge proposal, and let germidiff work out the refs, the
-collections and the chdist for itself:
+To diff a Launchpad merge proposal, and let germidiff work out the details for
+itself:
 
 ```
 germidiff-mp <merge-proposal-url> [options]
 ```
 
 See [Diffing a merge proposal](#diffing-a-merge-proposal) below.
+
+The report says what the change does once it has landed everywhere: it assumes
+the metapackages built from these seeds — `ubuntu-server-minimal` and the rest
+— have been rebuilt and uploaded. Without that assumption most changes would
+read as doing nothing at all, since the package a seed just dropped is still
+pulled in by a metapackage built from the seeds as they were.
+`--no-metapackage-probe` reports the archive exactly as it stands instead.
 
 Output is plain text with light markdown-ish styling, plain enough to paste
 straight into a Launchpad merge proposal comment:
@@ -47,7 +54,7 @@ and 12 more, already pulled in by other seeds
 62 packages, all still pulled in by other seeds
 ```
 
-The global section comes first — below the metapackage note described later,
+The global section comes first — below the note recording that assumption,
 where there is one — and is the union of expanded packages across all seeds,
 old versus new. It is computed from the two unions rather than by summing the
 per-seed diffs, so a package dropped from one seed but still pulled in by
@@ -138,56 +145,6 @@ out loud" is a set difference over data both runs already produced — typically
 a handful of packages rather than the whole closure — and the reason comes
 from germinate's own `Why` column.
 
-### Metapackage lag
-
-A seed change does not reach the archive on its own. `ubuntu-meta` and its
-siblings are built by `germinate-update-metapackage`, which sets each
-metapackage's `Depends` from the explicit entries of the seed it stands for,
-and its `Recommends` from that seed's `seed-recommends` entries — in both cases
-together with any seed named in that seed's `Task-Seeds:` header. Those
-metapackages then sit in the archive that the *next* germination reads.
-
-So dropping a seed entry often looks like nothing happened — the package is
-still pulled in, by a metapackage built from the previous state of these very
-seeds. germidiff spots those dependencies.
-
-It is not a guess. A holder counts only when it is named by the seed's
-`Task-Metapackage:` header, or its name ends in `-<seed>` *and* it is itself an
-entry of that seed; and only when the package was named by that seed before the
-change and is not after — which is exactly the condition under which
-regeneration drops the dependency.
-
-Both relationships count, and a seed's two entry lists are read as one. A stale
-`Recommends` hides a change exactly as completely as a stale `Depends`, since
-germinate follows both; but a package moved from a seed's entries to its
-`seed-recommends` has not been dropped at all — it comes back as a `Recommends`
-— so that is no edge, and the probe below cuts whichever relationship the
-archive actually has.
-
-Having found those, germidiff germinates the new side again without them, and
-diffs against *that* — so there is one diff, saying what the change does rather
-than what it does not do yet. A note above it says what was assumed:
-
-```
-**assuming the metapackages are rebuilt**
-pollinate dropped from ubuntu-cloud-minimal, ubuntu-server,
-ubuntu-server-minimal, which are built from these seeds
-
-**global**
--pollinate
-
-**server-cloud-minimal**
--curl
--libcurl4t64
-...
-```
-
-This runs by default, but only when there is something for it to say;
-`--no-metapackage-probe` turns it off and reports the archive as it stands,
-warning about each dependency being taken at face value. It is a probe like
-the retention one below, so it needs germinate importable by the same Python,
-and falls back to those same warnings where it is not.
-
 ### Probing it
 
 Germinate records only *one* reason per package, so a `!` line is a strong
@@ -228,8 +185,8 @@ different germination.
 
 * Python 3.6 or later; no third-party modules.
 * `germinate` on `$PATH` (or named with `--germinate`), and importable by
-  that same Python for the probes — the metapackage one that runs by default
-  as well as `--probe-retention`.
+  that same Python: the metapackage assumption above and `--probe-retention`
+  are both settled by germinating in-process.
 * `git`.
 * `chdist`, from devscripts, and network access to the archive: both
   commands create the chdist they need and refresh its package lists before
