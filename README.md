@@ -183,7 +183,7 @@ different germination.
 
 ## Requirements
 
-* Python 3.6 or later; no third-party modules.
+* Python 3.7 or later; no third-party modules.
 * `germinate` on `$PATH` (or named with `--germinate`), and importable by
   that same Python: the metapackage assumption above and `--probe-retention`
   are both settled by germinating in-process.

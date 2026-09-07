@@ -59,8 +59,6 @@ STRUCTURE_OUTPUT = "structure"
 EXTRA_SEED = "extra"
 
 
-
-
 class GerminateError(Exception):
     """Germinate could not be run, or did not produce usable output."""
 
