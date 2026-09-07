@@ -45,6 +45,14 @@ class CliTestCase(GitTestCase):
             'Apt {\n   Architecture "ppc64el";\n};\n'
             'Dir "%s";\n' % self.temp_dir,
         )
+        # What a run works out it needs: the questing archive with the
+        # components the ubuntu collection germinates against.
+        self.write(
+            os.path.join(
+                self.chdist_base, "questing", "etc", "apt", "sources.list"
+            ),
+            "deb http://archive.example/ubuntu questing main restricted\n",
+        )
 
     def make_seed_repo(self, name, structure, seeds):
         repo = self.make_repo(os.path.join(self.temp_dir, name))
@@ -81,7 +89,7 @@ class TestEndToEnd(CliTestCase):
     def test_diffs_a_change_to_an_outer_collection(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -93,7 +101,7 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "swap mail client")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertEqual(
             "**global**\n"
@@ -112,7 +120,7 @@ class TestEndToEnd(CliTestCase):
         # it shows up in the diff.
         self.make_platform(packages=("libc", "coreutils"))
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -124,7 +132,7 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "add gimp")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertNotIn("libc", out)
         self.assertNotIn("coreutils", out)
@@ -133,7 +141,7 @@ class TestEndToEnd(CliTestCase):
     def test_new_and_removed_seeds_are_labelled(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\noldseed: base\n",
             {"desktop": ["firefox"], "oldseed": ["somepackage"]},
         )
@@ -146,7 +154,7 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "replace oldseed with server")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertEqual(
             "**global**\n"
@@ -164,7 +172,7 @@ class TestEndToEnd(CliTestCase):
     def test_package_moved_between_seeds_has_no_net_effect(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\nserver: base\n",
             {"desktop": ["nginx"], "server": []},
         )
@@ -176,7 +184,7 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "move nginx to server")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertEqual(
             "**global**\n"
@@ -193,7 +201,7 @@ class TestEndToEnd(CliTestCase):
     def test_no_changes_still_exits_zero(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -201,7 +209,7 @@ class TestEndToEnd(CliTestCase):
         self.write(os.path.join(repo, "README"), "no seed change\n")
         new = self.commit(repo, "docs only")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertEqual("No changes to any expanded package list.\n", out)
 
@@ -219,14 +227,14 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(platform_repo, "add systemd")
 
-        status, out = self.run_cli(platform_repo, old, new, "questing")
+        status, out = self.run_cli(platform_repo, old, new)
         self.assertEqual(0, status)
         self.assertEqual("**global**\n+systemd\n\n**base**\n+systemd\n", out)
 
     def test_dependencies_pulled_in_by_the_change_show_up(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -239,7 +247,7 @@ class TestEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "add gimp")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertIn("+libgimp", out)
 
@@ -248,23 +256,23 @@ class TestFailures(CliTestCase):
     def test_unknown_ref_is_an_error(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu", "include platform.questing\ndesktop: base\n",
+            "ubuntu.questing", "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
         old = self.commit(repo, "initial")
-        status, out = self.run_cli(repo, old, "nosuchref", "questing")
+        status, out = self.run_cli(repo, old, "nosuchref")
         self.assertEqual(1, status)
         self.assertEqual("", out)
 
     def test_missing_dependent_collection_is_an_error(self):
         repo = self.make_seed_repo(
-            "ubuntu", "include platform.questing\ndesktop: base\n",
+            "ubuntu.questing", "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
         old = self.commit(repo, "initial")
         self.write(os.path.join(repo, "desktop"), " * gimp\n")
         new = self.commit(repo, "change")
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(1, status)
         self.assertEqual("", out)
 
@@ -273,11 +281,11 @@ class TestFailures(CliTestCase):
         # with a bare "could not open STRUCTURE" from inside its own run.
         os.makedirs(os.path.join(self.temp_dir, "platform.questing"))
         repo = self.make_seed_repo(
-            "ubuntu", "include platform.questing\ndesktop: base\n",
+            "ubuntu.questing", "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
         old = self.commit(repo, "initial")
-        status, out = self.run_cli(repo, old, old, "questing")
+        status, out = self.run_cli(repo, old, old)
         self.assertEqual(1, status)
         self.assertEqual("", out)
 
@@ -285,21 +293,9 @@ class TestFailures(CliTestCase):
         self.make_platform()
         directory = os.path.join(self.temp_dir, "notarepo")
         os.makedirs(directory)
-        status, out = self.run_cli(directory, "a", "b", "questing")
+        status, out = self.run_cli(directory, "a", "b")
         self.assertEqual(1, status)
         self.assertEqual("", out)
-
-    def test_unknown_chdist_is_an_error(self):
-        self.make_platform()
-        repo = self.make_seed_repo(
-            "ubuntu", "include platform.questing\ndesktop: base\n",
-            {"desktop": ["firefox"]},
-        )
-        old = self.commit(repo, "initial")
-        status, out = self.run_cli(repo, old, old, "nosuchchdist")
-        self.assertEqual(1, status)
-        self.assertEqual("", out)
-
 
 class TestAptConfigForChdist(CliTestCase):
     def test_resolves_a_chdist_name(self):
@@ -308,19 +304,6 @@ class TestAptConfigForChdist(CliTestCase):
                 self.chdist_base, "questing", "etc", "apt", "apt.conf"
             ),
             apt_config_for_chdist("questing", self.chdist_base),
-        )
-
-    def test_accepts_a_chdist_directory(self):
-        directory = os.path.join(self.chdist_base, "questing")
-        self.assertEqual(
-            os.path.join(directory, "etc", "apt", "apt.conf"),
-            apt_config_for_chdist(directory, self.chdist_base),
-        )
-
-    def test_accepts_an_apt_conf_path(self):
-        self.assertEqual(
-            self.apt_conf,
-            apt_config_for_chdist(self.apt_conf, self.chdist_base),
         )
 
     def test_unknown_chdist(self):
@@ -366,7 +349,7 @@ class TestArchDefault(CliTestCase):
     def test_the_run_uses_the_chdist_arch(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -376,7 +359,7 @@ class TestArchDefault(CliTestCase):
 
         work_dir = os.path.join(self.temp_dir, "work")
         status, _ = self.run_cli(
-            repo, old, new, "questing", "--work-dir", work_dir
+            repo, old, new, "--work-dir", work_dir
         )
         self.assertEqual(0, status)
         with open(os.path.join(work_dir, "new", "germinate.log")) as f:
@@ -414,7 +397,7 @@ class TestArchDefault(CliTestCase):
         # packages, and about as many complaints, as a good run.
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -424,7 +407,7 @@ class TestArchDefault(CliTestCase):
 
         with self.assertLogs("germidiff", level="WARNING") as caught:
             status, _ = self.run_cli(
-                repo, old, new, "questing", "--arch", "riscv64"
+                repo, old, new, "--arch", "riscv64"
             )
         self.assertEqual(0, status)
         self.assertIn(
@@ -434,7 +417,7 @@ class TestArchDefault(CliTestCase):
     def test_an_explicit_arch_still_wins(self):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
         )
@@ -444,7 +427,7 @@ class TestArchDefault(CliTestCase):
 
         work_dir = os.path.join(self.temp_dir, "work")
         status, _ = self.run_cli(
-            repo, old, new, "questing", "--arch", "riscv64",
+            repo, old, new, "--arch", "riscv64",
             "--work-dir", work_dir,
         )
         self.assertEqual(0, status)
@@ -458,7 +441,7 @@ class TestRetentionEndToEnd(CliTestCase):
     def make_trees(self, new_desktop):
         self.make_platform()
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             # dpkg-dev recommends build-essential, as in the real archive.
             {"desktop": ["dpkg-dev~build-essential", "build-essential"]},
@@ -474,7 +457,7 @@ class TestRetentionEndToEnd(CliTestCase):
 
     def test_reports_a_package_now_held_only_by_a_recommends(self):
         repo, old, new = self.make_trees(["dpkg-dev~build-essential"])
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         # The expanded lists are unchanged -- that is the whole point.
         self.assertIn("No changes to any expanded package list.", out)
@@ -486,14 +469,14 @@ class TestRetentionEndToEnd(CliTestCase):
     def test_says_nothing_when_the_package_really_went_away(self):
         # Dropping both leaves nothing to explain: it shows in the diff.
         repo, old, new = self.make_trees([])
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertIn("-build-essential", out)
         self.assertNotIn("no longer seeded", out)
 
     def test_a_hard_dependency_is_not_flagged_as_soft(self):
         repo = self.make_seed_repo(
-            "ubuntu",
+            "ubuntu.questing",
             "include platform.questing\ndesktop: base\n",
             {"desktop": ["dpkg-dev+build-essential", "build-essential"]},
         )
@@ -506,7 +489,7 @@ class TestRetentionEndToEnd(CliTestCase):
         )
         new = self.commit(repo, "drop the explicit entry")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertIn("**no longer seeded, still pulled in**", out)
         self.assertNotIn("!", out)
@@ -517,7 +500,7 @@ class TestRetentionEndToEnd(CliTestCase):
         # run; that must warn rather than lose the diff.
         repo, old, new = self.make_trees(["dpkg-dev~build-essential"])
         status, out = self.run_cli(
-            repo, old, new, "questing", "--probe-retention"
+            repo, old, new, "--probe-retention"
         )
         self.assertEqual(0, status)
         self.assertIn("! build-essential: only by dpkg-dev", out)
@@ -541,7 +524,7 @@ class TestCollectionDiscovery(CliTestCase):
         self.write(os.path.join(repo, "desktop"), " * gimp\n")
         new = self.commit(repo, "change")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertIn("+gimp", out)
 
@@ -570,7 +553,7 @@ class TestCollectionDiscovery(CliTestCase):
         )
         new = self.commit(repo, "add a French dictionary")
 
-        status, out = self.run_cli(repo, old, new, "questing")
+        status, out = self.run_cli(repo, old, new)
         self.assertEqual(0, status)
         self.assertIn("+hunspell-fr", out)
         self.assertIn("**desktop-fr**", out)
@@ -587,7 +570,7 @@ class TestCollectionDiscovery(CliTestCase):
 
         err = io.StringIO()
         with redirect_stderr(err):
-            status, out = self.run_cli(repo, old, new, "questing")
+            status, out = self.run_cli(repo, old, new)
         self.assertEqual(1, status)
         self.assertEqual("", out)
         message = err.getvalue()
@@ -677,11 +660,6 @@ class TestChdistHandling(CliTestCase):
     def test_a_branch_name_with_no_series_says_so(self):
         # "ubuntu" alone names no archive, and guessing one would germinate
         # against whatever happened to be lying around.
-        self.write_collection(
-            os.path.join(self.temp_dir, "platform.questing"),
-            "base:\n",
-            {"base": ["libc"]},
-        )
         repo = self.make_seed_repo(
             "ubuntu", "desktop:\n", {"desktop": ["firefox"]}
         )
@@ -689,52 +667,45 @@ class TestChdistHandling(CliTestCase):
 
         err = io.StringIO()
         with redirect_stderr(err):
-            status, out = self.run_bare(repo, old, old)
+            status, out = self.run_fresh(repo, old, old)
 
         self.assertEqual(1, status)
         self.assertEqual("", out)
         self.assertIn("--seed-dist", err.getvalue())
+        self.assertEqual([], self.chdist_calls())
 
-    def test_a_named_chdist_is_refreshed_before_the_runs(self):
+    def test_seed_dist_settles_it(self):
+        # A collection checked out under a name of your own still says which
+        # archive it means, once you say which branch it stands for.
+        repo, old, new = self.make_change("ubuntu")
+
+        status, out = self.run_fresh(
+            repo, old, new, "--seed-dist", "ubuntu.questing"
+        )
+
+        self.assertEqual(0, status)
+        self.assertIn("create questing", self.chdist_calls()[0])
+
+    def test_an_existing_chdist_is_refreshed_before_the_runs(self):
         # Both germinate runs read one archive, so it is refreshed once,
-        # before either of them.
+        # before either of them: an archive that moved in between would show
+        # up as a seed change nobody made.
         repo, old, new = self.make_change()
 
-        status, out = self.run_bare(repo, old, new, "questing")
+        status, out = self.run_bare(repo, old, new)
 
         self.assertEqual(0, status)
         self.assertEqual(["-d %s apt-get questing update" % self.chdist_base],
                          self.chdist_calls())
 
     def test_no_update_leaves_the_lists_as_they_stand(self):
+        # Worth having for a run of germinations one after another, which
+        # would otherwise pay for an apt-get update apiece.
         repo, old, new = self.make_change()
 
-        status, out = self.run_bare(repo, old, new, "questing", "--no-update")
+        status, out = self.run_bare(repo, old, new, "--no-update")
 
         self.assertEqual(0, status)
-        self.assertEqual([], self.chdist_calls())
-
-    def test_a_chdist_given_as_a_path_is_refreshed_where_it_lives(self):
-        # Addressed the way the chdist tool addresses one, so that what gets
-        # refreshed is what gets germinated against.
-        repo, old, new = self.make_change()
-        path = os.path.join(self.chdist_base, "questing")
-
-        status, out = self.run_bare(repo, old, new, path)
-
-        self.assertEqual(0, status)
-        self.assertEqual(["-d %s apt-get questing update" % self.chdist_base],
-                         self.chdist_calls())
-
-    def test_a_chdist_that_does_not_exist_is_not_refreshed(self):
-        # Saying which chdist is meant beats chdist failing to update it.
-        repo, old, new = self.make_change()
-
-        err = io.StringIO()
-        with redirect_stderr(err):
-            status, out = self.run_bare(repo, old, new, "nosuchchdist")
-
-        self.assertEqual(1, status)
         self.assertEqual([], self.chdist_calls())
 
 
@@ -771,7 +742,7 @@ class TestProgress(CliTestCase):
         # saying what is happening costs the output nothing.
         repo, old, new = self.make_change()
 
-        status, out, err = self.run_capturing(repo, old, new, "questing")
+        status, out, err = self.run_capturing(repo, old, new)
 
         self.assertEqual(0, status)
         self.assertIn("+gimp", out)
@@ -782,7 +753,7 @@ class TestProgress(CliTestCase):
     def test_quiet_keeps_it_to_problems(self):
         repo, old, new = self.make_change()
 
-        status, out, err = self.run_capturing(repo, old, new, "questing", "-q")
+        status, out, err = self.run_capturing(repo, old, new, "-q")
 
         self.assertEqual(0, status)
         self.assertIn("+gimp", out)
@@ -791,7 +762,7 @@ class TestProgress(CliTestCase):
     def test_verbose_adds_the_commands_themselves(self):
         repo, old, new = self.make_change()
 
-        status, out, err = self.run_capturing(repo, old, new, "questing", "-v")
+        status, out, err = self.run_capturing(repo, old, new, "-v")
 
         self.assertEqual(0, status)
         self.assertIn("adding worktree", err)

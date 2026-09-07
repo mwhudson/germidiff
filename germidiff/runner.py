@@ -68,22 +68,12 @@ class GerminateError(Exception):
 def apt_config_for_chdist(chdist, base=None):
     """Work out the ``APT_CONFIG`` file for a chdist.
 
-    ``chdist`` is normally the name of a chdist, resolved under
-    ``base`` -- germidiff's own chdist directory, not the one the ``chdist``
-    tool keeps for you.  For convenience it may also be a path to a chdist
-    directory or straight to an ``apt.conf``, which is how a chdist of your
-    own is named without moving the whole search.
+    ``chdist`` is the name of one under ``base`` -- germidiff's own chdist
+    directory, not the one the ``chdist`` tool keeps for you.  Names are all
+    there is: which chdist a run needs follows from the collection and series
+    it is germinating, so it is worked out rather than chosen.
     """
-    expanded = os.path.expanduser(chdist)
-    if os.path.isfile(expanded):
-        return os.path.abspath(expanded)
-    if os.path.isdir(expanded):
-        candidate = os.path.join(expanded, "etc", "apt", "apt.conf")
-        if os.path.isfile(candidate):
-            return os.path.abspath(candidate)
-
     base = chdist_base(base)
-
     directory = os.path.join(base, chdist)
     candidate = os.path.join(directory, "etc", "apt", "apt.conf")
     if os.path.isfile(candidate):
@@ -91,13 +81,7 @@ def apt_config_for_chdist(chdist, base=None):
 
     if not os.path.isdir(directory):
         raise GerminateError(
-            "no chdist named %r under %s (germidiff keeps its own chdists "
-            "there; for one of yours pass its path, or --chdist-base %s)"
-            % (
-                chdist,
-                base,
-                os.path.join(os.path.expanduser("~"), ".chdist"),
-            )
+            "no chdist named %r under %s" % (chdist, base)
         )
     raise GerminateError(
         "chdist %s has no etc/apt/apt.conf (looked in %s)"

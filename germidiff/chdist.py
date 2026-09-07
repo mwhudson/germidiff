@@ -41,7 +41,6 @@ __all__ = [
     "MAIN_COMPONENTS",
     "MAIN_ONLY_COLLECTIONS",
     "chdist_base",
-    "chdist_location",
     "chdist_name",
     "components_for_collection",
     "ensure_chdist",
@@ -82,30 +81,6 @@ def chdist_base(base=None):
             cache_home = os.path.join(os.path.expanduser("~"), ".cache")
         base = os.path.join(cache_home, "germidiff", "chdists")
     return os.path.abspath(os.path.expanduser(base))
-
-
-def chdist_location(chdist, base=None):
-    """Address a chdist as the ``(base, name)`` pair the chdist tool takes.
-
-    ``chdist`` is a name under ``base``, or a path to a chdist directory or
-    to the ``apt.conf`` inside one -- the three forms
-    :func:`germidiff.runner.apt_config_for_chdist` accepts, resolved in the
-    same order, so that whatever is refreshed is the one being germinated
-    against.
-    """
-    expanded = os.path.expanduser(chdist)
-    if os.path.isfile(expanded):
-        # <directory>/etc/apt/apt.conf
-        directory = os.path.abspath(
-            os.path.join(os.path.dirname(expanded), os.pardir, os.pardir)
-        )
-    elif os.path.isdir(expanded) and os.path.isfile(
-        os.path.join(expanded, "etc", "apt", "apt.conf")
-    ):
-        directory = os.path.abspath(expanded)
-    else:
-        return chdist_base(base), chdist
-    return os.path.dirname(directory), os.path.basename(directory)
 
 
 def update_chdist(name, base=None):

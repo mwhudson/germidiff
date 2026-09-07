@@ -6,17 +6,17 @@ Given two refs of a seed git repo, germidiff runs germinate against each
 and diffs the resulting expanded per-seed package lists.
 
 ```
-germidiff <seed-repo> <old-ref> <new-ref> [<chdist>] [options]
+germidiff <seed-repo> <old-ref> <new-ref> [options]
 ```
 
 Both runs use the same archive metadata (a `chdist`, kept in a directory of
 germidiff's own) and the same checkouts of any other seed collections
 involved, so the diff reflects only the seed change and not archive drift.
 
-The chdist is worked out from the collection's own branch name and created if
-it is not there, so it is only worth naming when you want a particular one.
-Progress goes to standard error and the report to standard output, so the
-report can be redirected on its own.
+The chdist is worked out from the collection's own branch name, created if it
+is not there, and refreshed before the runs; there is nothing to set up and
+nothing to choose. Progress goes to standard error and the report to standard
+output, so the report can be redirected on its own.
 
 To diff a Launchpad merge proposal, and let germidiff work out the refs, the
 collections and the chdist for itself:
@@ -233,8 +233,8 @@ different germination.
 * `git`.
 * `chdist`, from devscripts, and network access to the archive: both
   commands create the chdist they need and refresh its package lists before
-  germinating. Neither is needed for a chdist you name yourself and run with
-  `--no-update`.
+  germinating. Only `chdist` itself is needed under `--no-update`, once the
+  chdist exists.
 * For `germidiff-mp` only: network access to Launchpad.
 
 ## Setting up
@@ -265,23 +265,18 @@ refused to run because yours carries the wrong components, or ran `apt-get
 update` on one you were deliberately holding still. `$CHDIST_HOME` is ignored
 for the same reason.
 
-To use a particular chdist, name it as the fourth argument — either a name
-under that directory or the path to any chdist directory or `apt.conf`. One
-named that way is taken as it stands: neither created nor checked against what
-the collection wants. It is still refreshed, though, so a chdist of yours that
-you are deliberately holding still wants `--no-update` as well. That is the
-difference the separate directory buys: germidiff never picks a name in yours,
-and only ever touches one you pointed it at.
+There is no way to name a chdist instead. Which one answers a germination
+follows from the collection and the series, both runs have to agree on it, and
+a chdist that does not match what the collection germinates against produces a
+plausible report that is wrong — so it is worked out rather than chosen. What
+that shuts out is germinating against a *different* archive, an old snapshot
+say; if that turns out to be worth doing, it wants naming as such rather than
+by handing over a chdist and hoping.
+
+`--chdist-base` moves the whole store, which is as close as this gets:
 
 ```
-germidiff ~/seeds/ubuntu.questing HEAD~1 HEAD ~/.chdist/questing --no-update
-```
-
-`--chdist-base` moves the whole search rather than naming one chdist, and both
-commands accept it:
-
-```
-germidiff ~/seeds/ubuntu.questing HEAD~1 HEAD questing --chdist-base ~/.chdist
+germidiff ~/seeds/ubuntu.questing HEAD~1 HEAD --chdist-base /var/tmp/chdists
 ```
 
 ### Components
@@ -369,10 +364,12 @@ so needs nothing beside it:
 germidiff ~/seeds/platform.questing HEAD~1 HEAD
 ```
 
-Diff against a chdist of your own, exactly as it stands:
+Diff several changes in a row against the archive as it stands, paying for
+one `apt-get update` rather than one apiece:
 
 ```
-germidiff ~/seeds/ubuntu.questing main my-branch ~/.chdist/questing --no-update
+germidiff ~/seeds/ubuntu.questing main branch-one
+germidiff ~/seeds/ubuntu.questing main branch-two --no-update
 ```
 
 Keep the worktrees and germinate's own output around to look at, reporting
@@ -519,9 +516,8 @@ pay for the seed history once.
 **The chdist is named for the series and its components**, the same way
 `germidiff` names it — see [Components](#components) — and worked out from the
 proposal rather than from a directory name. A missing chdist is created, and
-whichever one is used is refreshed before germinating; `--chdist NAME` takes
-one as it stands rather than creating or checking it, and `--no-update` leaves
-its package lists alone.
+the one used is refreshed before germinating unless `--no-update` says
+otherwise.
 
 `--dry-run` fetches everything and prints what it would germinate, which is
 the cheap way to check the resolution before paying for two germinations.

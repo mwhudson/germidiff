@@ -32,7 +32,7 @@ import re
 import sys
 
 from germidiff import VERSION, cli
-from germidiff.chdist import ChdistError, ensure_chdist, update_chdist
+from germidiff.chdist import ChdistError, ensure_chdist
 from germidiff.launchpad import (
     LaunchpadError,
     git_url_for,
@@ -129,12 +129,6 @@ def parse_args(argv=None):
         "repository part is appended (default: %(default)s)",
     )
     parser.add_argument(
-        "--chdist",
-        metavar="NAME",
-        help="use this chdist instead of the one the series and collection "
-        "imply; it is taken as it stands rather than created or checked",
-    )
-    parser.add_argument(
         "--no-header",
         dest="header",
         action="store_false",
@@ -214,21 +208,15 @@ def run(args):
         _logger.info("holding %s at %s", name, directory)
 
     components = cli.components_for(args, mp.collection)
-    if args.chdist:
-        chdist = args.chdist
-        _logger.info("using chdist %s as given", chdist)
-        if args.update:
-            update_chdist(chdist, args.chdist_base)
-    else:
-        chdist = ensure_chdist(
-            mp.series,
-            components,
-            args.arch or cli.host_arch(),
-            base=args.chdist_base,
-            mirror=args.mirror,
-            update=args.update,
-            check_components=args.check_components,
-        )
+    chdist = ensure_chdist(
+        mp.series,
+        components,
+        args.arch or cli.host_arch(),
+        base=args.chdist_base,
+        mirror=args.mirror,
+        update=args.update,
+        check_components=args.check_components,
+    )
 
     header = _header(mp, branch, old, source, chdist, components)
     if args.dry_run:
@@ -238,14 +226,11 @@ def run(args):
     diff_args.seed_repo = repo
     diff_args.old_ref = old
     diff_args.new_ref = source
-    diff_args.chdist = chdist
     diff_args.seed_dist = branch
-    # The chdist is settled: it has been created or taken as given, and
-    # refreshed if it was going to be.  Doing it again would cost a second
-    # apt-get update for nothing.
-    diff_args.update = False
 
-    text = cli.run(diff_args)
+    # The chdist is settled -- created if it was missing, and refreshed --
+    # so it is handed over rather than worked out again.
+    text = cli.run(diff_args, chdist=chdist)
     if args.header:
         return header + "\n" + text
     return text

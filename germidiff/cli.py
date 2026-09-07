@@ -28,10 +28,8 @@ from germidiff.chdist import (
     ChdistError,
     DEFAULT_MIRROR,
     chdist_base,
-    chdist_location,
     components_for_collection,
     ensure_chdist,
-    update_chdist,
 )
 from germidiff.diff import diff_runs
 from germidiff.metapackage import pending_edges
@@ -99,10 +97,10 @@ per-seed package lists.  Any other seed collection the one under test depends
 on is held fixed at the checkout beside it, so the diff reflects only the seed
 change.
 
-With no CHDIST, the archive to read is worked out from the collection's own
-branch name: ubuntu.resolute is the resolute archive, and the ubuntu
-collection germinates against main and restricted.  A chdist for that is
-created if it is not there already, and refreshed before the runs.
+The archive to read is worked out from the collection's own branch name:
+ubuntu.resolute is the resolute archive, and the ubuntu collection germinates
+against main and restricted.  A chdist for that is created if it is not there
+already, and refreshed before the runs.
 """
 
 EPILOG = """\
@@ -249,10 +247,8 @@ def add_chdist_options(parser):
     parser.add_argument(
         "--chdist-base",
         metavar="DIR",
-        help="directory germidiff keeps its chdists in (default: "
-        "%s); pass ~/.chdist to use the ones you made yourself" % (
-            chdist_base(),
-        ),
+        help="directory germidiff keeps its chdists in, creating and "
+        "refreshing them as it needs to (default: %s)" % (chdist_base(),),
     )
     parser.add_argument(
         "--mirror",
@@ -315,16 +311,6 @@ def parse_args(argv=None):
         "new_ref", metavar="NEW-REF", help="git ref to diff to"
     )
     parser.add_argument(
-        "chdist",
-        metavar="CHDIST",
-        nargs="?",
-        help="chdist providing the archive metadata for both runs: the name "
-        "of one under --chdist-base, or the path to any chdist directory or "
-        "apt.conf (default: the one the collection's branch name implies, "
-        "created if it is not there already)",
-    )
-
-    parser.add_argument(
         "-s",
         "--seed-dist",
         metavar="BRANCH",
@@ -355,30 +341,29 @@ def _make_work_dir(args):
     return tempfile.mkdtemp(prefix="germidiff-"), not args.keep
 
 
-def resolve_chdist(args, seed_dist):
+def resolve_chdist(args, seed_dist, chdist=None):
     """The chdist both runs read the archive through.
 
-    Given one, take it as it stands and refresh it; given none, work it out
-    from the branch name the way germidiff-mp works it out from a merge
-    proposal -- ubuntu.resolute is the ubuntu collection of the resolute
-    series -- and create it if it is not there.
+    Worked out from the branch name the way germidiff-mp works it out from a
+    merge proposal -- ubuntu.resolute is the ubuntu collection of the
+    resolute series -- and created if it is not there.  There is no way to
+    name one instead: which chdist answers a germination is a fact about the
+    collection, and the two runs have to agree on it.
+
+    ``chdist`` is one a caller has already settled: germidiff-mp works it
+    out before germinating so that it can say what it is about to do, and
+    passes it back here rather than having it worked out twice.
     """
-    if args.chdist is not None:
-        # Resolved before being refreshed, so that a name that means nothing
-        # is reported as such rather than by chdist failing to update it.
-        apt_config = apt_config_for_chdist(args.chdist, args.chdist_base)
-        if args.update:
-            base, name = chdist_location(args.chdist, args.chdist_base)
-            update_chdist(name, base)
-        return args.chdist, apt_config
+    if chdist is not None:
+        return chdist, apt_config_for_chdist(chdist, args.chdist_base)
 
     collection, series = split_branch(seed_dist)
     if series is None:
         raise GerminateError(
-            "cannot tell which archive %s means: a branch name is read as "
-            "collection.series, as germinate reads it, so %s says nothing "
-            "about a series.  Name a chdist, or give the branch with "
-            "--seed-dist" % (seed_dist, seed_dist)
+            "cannot tell which archive %s means: a branch name is read "
+            "as collection.series, as germinate reads it, so %s names no "
+            "series.  Give the branch it stands for with --seed-dist"
+            % (seed_dist, seed_dist)
         )
     components = components_for(args, collection)
     _logger.info(
@@ -425,7 +410,7 @@ def _one_side(
     return run, out_dir, seed_base
 
 
-def run(args):
+def run(args, chdist=None):
     """Do the work.  Returns the text to print on stdout."""
     repo = os.path.abspath(os.path.expanduser(args.seed_repo))
     check_repo(repo)
@@ -437,7 +422,7 @@ def run(args):
         seed_dist = os.path.basename(repo.rstrip(os.sep))
     _logger.info("collection under test: %s (%s)", seed_dist, repo)
 
-    chdist, apt_config = resolve_chdist(args, seed_dist)
+    chdist, apt_config = resolve_chdist(args, seed_dist, chdist)
     if args.arch is None:
         args.arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
     else:

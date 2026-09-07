@@ -126,7 +126,6 @@ class MpTestCase(GitTestCase):
             "--germinate", FAKE_GERMINATE,
             "--cache-dir", self.cache,
             "--chdist-base", self.chdist_base,
-            "--chdist", "questing",
             "--seed-source", self.upstream + "/",
             "--no-update",
             "--quiet",
@@ -405,7 +404,7 @@ class TestChdistHandling(MpTestCase):
         return {"ubuntu": fork}
 
     def run_derived(self, *args, **kwargs):
-        """Run without the --chdist and --no-update the other tests pass."""
+        """Run without the --no-update the other tests pass."""
         base = kwargs.pop("base", self.fresh_base)
         urls = self.propose()
         argv = [
@@ -450,10 +449,8 @@ class TestChdistHandling(MpTestCase):
         ]
         self.assertEqual(1, len(updates))
 
-    def test_a_chdist_given_is_refreshed_too(self):
-        status, text = self.run_derived(
-            "--chdist", "questing", base=self.chdist_base
-        )
+    def test_an_existing_chdist_is_refreshed_rather_than_rebuilt(self):
+        status, text = self.run_derived(base=self.chdist_base)
 
         self.assertEqual(0, status)
         self.assertEqual(
@@ -462,9 +459,7 @@ class TestChdistHandling(MpTestCase):
         )
 
     def test_no_update_leaves_the_lists_as_they_stand(self):
-        status, text = self.run_derived(
-            "--chdist", "questing", "--no-update", base=self.chdist_base
-        )
+        status, text = self.run_derived("--no-update", base=self.chdist_base)
 
         self.assertEqual(0, status)
         self.assertEqual([], self.chdist_calls())
