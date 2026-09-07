@@ -29,17 +29,10 @@ import argparse
 import logging
 import os
 import re
-import subprocess
 import sys
 
 from germidiff import VERSION, cli
-from germidiff.chdist import (
-    ChdistError,
-    DEFAULT_MIRROR,
-    chdist_base,
-    components_for_collection,
-    ensure_chdist,
-)
+from germidiff.chdist import ChdistError, ensure_chdist, update_chdist
 from germidiff.launchpad import (
     LaunchpadError,
     git_url_for,
@@ -105,21 +98,6 @@ def _default_cache_dir():
     return os.path.join(cache_home, "germidiff", "seeds")
 
 
-def _host_arch():
-    try:
-        proc = subprocess.run(
-            ["dpkg", "--print-architecture"],
-            capture_output=True,
-            encoding="UTF-8",
-            errors="replace",
-        )
-    except OSError:
-        return cli.DEFAULT_ARCH
-    if proc.returncode != 0:
-        return cli.DEFAULT_ARCH
-    return proc.stdout.strip() or cli.DEFAULT_ARCH
-
-
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="germidiff-mp",
@@ -154,44 +132,7 @@ def parse_args(argv=None):
         "--chdist",
         metavar="NAME",
         help="use this chdist instead of the one the series and collection "
-        "imply; it is taken as it stands, neither created nor updated",
-    )
-    parser.add_argument(
-        "--chdist-base",
-        metavar="DIR",
-        help="directory germidiff keeps its chdists in (default: "
-        "%s); pass ~/.chdist to use the ones you made yourself" % (
-            chdist_base(),
-        ),
-    )
-    parser.add_argument(
-        "--mirror",
-        metavar="URL",
-        default=DEFAULT_MIRROR,
-        help="archive to create a missing chdist against (default: "
-        "%(default)s)",
-    )
-    parser.add_argument(
-        "--components",
-        metavar="LIST",
-        help="components to germinate against, space or comma separated, "
-        "overriding what the collection implies",
-    )
-    parser.add_argument(
-        "--no-check-components",
-        dest="check_components",
-        action="store_false",
-        default=True,
-        help="use an existing chdist even if it does not offer exactly the "
-        "components this collection germinates against",
-    )
-    parser.add_argument(
-        "--no-update",
-        dest="update",
-        action="store_false",
-        default=True,
-        help="do not refresh the chdist's apt lists; a chdist that had to be "
-        "created is updated regardless, having no lists at all",
+        "imply; it is taken as it stands rather than created or checked",
     )
     parser.add_argument(
         "--no-header",
@@ -208,18 +149,13 @@ def parse_args(argv=None):
         "without germinating it",
     )
 
+    cli.add_chdist_options(parser)
     cli.add_analysis_options(parser)
 
     args = parser.parse_args(argv)
     if args.work_dir:
         args.keep = True
     return args
-
-
-def _components(args, collection):
-    if args.components:
-        return tuple(args.components.replace(",", " ").split())
-    return components_for_collection(collection)
 
 
 def _header(mp, branch, old, new, chdist, components):
@@ -277,15 +213,17 @@ def run(args):
     for name, directory in sorted(dependencies.items()):
         _logger.info("holding %s at %s", name, directory)
 
-    components = _components(args, mp.collection)
+    components = cli.components_for(args, mp.collection)
     if args.chdist:
         chdist = args.chdist
         _logger.info("using chdist %s as given", chdist)
+        if args.update:
+            update_chdist(chdist, args.chdist_base)
     else:
         chdist = ensure_chdist(
             mp.series,
             components,
-            args.arch or _host_arch(),
+            args.arch or cli.host_arch(),
             base=args.chdist_base,
             mirror=args.mirror,
             update=args.update,
@@ -302,6 +240,10 @@ def run(args):
     diff_args.new_ref = source
     diff_args.chdist = chdist
     diff_args.seed_dist = branch
+    # The chdist is settled: it has been created or taken as given, and
+    # refreshed if it was going to be.  Doing it again would cost a second
+    # apt-get update for nothing.
+    diff_args.update = False
 
     text = cli.run(diff_args)
     if args.header:
@@ -311,11 +253,7 @@ def run(args):
 
 def main(argv=None):
     args = parse_args(argv)
-    logging.basicConfig(
-        format="germidiff-mp: %(message)s",
-        level=logging.INFO if args.verbose else logging.WARNING,
-        stream=sys.stderr,
-    )
+    cli.configure_logging(args, "germidiff-mp")
     try:
         text = run(args)
     except (

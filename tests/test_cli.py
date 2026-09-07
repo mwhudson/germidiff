@@ -66,6 +66,10 @@ class CliTestCase(GitTestCase):
             FAKE_GERMINATE,
             "--chdist-base",
             self.chdist_base,
+            # These tests have no archive behind them and nothing to say
+            # about apt; the chdist handling has tests of its own.
+            "--no-update",
+            "--quiet",
         ] + list(args)
         out = io.StringIO()
         with redirect_stdout(out):
@@ -589,3 +593,205 @@ class TestCollectionDiscovery(CliTestCase):
         message = err.getvalue()
         self.assertIn("platform.questing", message)
         self.assertIn("beside the seed repo", message)
+
+
+class TestChdistHandling(CliTestCase):
+    """Working out, creating and refreshing the archive metadata."""
+
+    def setUp(self):
+        super().setUp()
+        self.use_stub_chdist(self.temp_dir)
+        # A directory with nothing in it, so that what a run works out for
+        # itself is what gets created rather than what setUp left lying
+        # around under the same name.
+        self.fresh_base = os.path.join(self.temp_dir, "new-chdists")
+
+    def make_change(self, name="ubuntu.questing"):
+        self.write_collection(
+            os.path.join(self.temp_dir, "platform.questing"),
+            "base:\n",
+            {"base": ["libc"]},
+        )
+        repo = self.make_seed_repo(
+            name,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        return repo, old, self.commit(repo, "change")
+
+    def run_bare(self, *args):
+        """Run without the --no-update the other tests default to."""
+        argv = [
+            "--germinate",
+            FAKE_GERMINATE,
+            "--chdist-base",
+            self.chdist_base,
+            "--quiet",
+        ] + list(args)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            status = main(argv)
+        return status, out.getvalue()
+
+    def run_fresh(self, *args):
+        """Run against a chdist directory that starts out empty."""
+        return self.run_bare(*(args + ("--chdist-base", self.fresh_base)))
+
+    def test_the_branch_name_says_which_chdist_to_make(self):
+        # ubuntu.questing is the ubuntu collection of the questing series,
+        # and the ubuntu collection germinates against main and restricted:
+        # everything the chdist needs is already on the command line.
+        repo, old, new = self.make_change()
+
+        status, out = self.run_fresh(repo, old, new)
+
+        self.assertEqual(0, status)
+        self.assertIn("+gimp", out)
+        created = self.chdist_calls()[0]
+        self.assertIn("create questing", created)
+        self.assertIn("main restricted", created)
+        self.assertNotIn("universe", created)
+
+    def test_a_flavour_gets_the_whole_archive(self):
+        repo, old, new = self.make_change("kubuntu.questing")
+
+        status, out = self.run_fresh(repo, old, new)
+
+        self.assertEqual(0, status)
+        created = self.chdist_calls()[0]
+        self.assertIn("create questing-all", created)
+        self.assertIn("main restricted universe multiverse", created)
+
+    def test_components_can_be_overridden(self):
+        repo, old, new = self.make_change()
+
+        status, out = self.run_fresh(
+            repo, old, new, "--components", "main,universe"
+        )
+
+        self.assertEqual(0, status)
+        self.assertIn("create questing-main+universe", self.chdist_calls()[0])
+
+    def test_a_branch_name_with_no_series_says_so(self):
+        # "ubuntu" alone names no archive, and guessing one would germinate
+        # against whatever happened to be lying around.
+        self.write_collection(
+            os.path.join(self.temp_dir, "platform.questing"),
+            "base:\n",
+            {"base": ["libc"]},
+        )
+        repo = self.make_seed_repo(
+            "ubuntu", "desktop:\n", {"desktop": ["firefox"]}
+        )
+        old = self.commit(repo, "initial")
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            status, out = self.run_bare(repo, old, old)
+
+        self.assertEqual(1, status)
+        self.assertEqual("", out)
+        self.assertIn("--seed-dist", err.getvalue())
+
+    def test_a_named_chdist_is_refreshed_before_the_runs(self):
+        # Both germinate runs read one archive, so it is refreshed once,
+        # before either of them.
+        repo, old, new = self.make_change()
+
+        status, out = self.run_bare(repo, old, new, "questing")
+
+        self.assertEqual(0, status)
+        self.assertEqual(["-d %s apt-get questing update" % self.chdist_base],
+                         self.chdist_calls())
+
+    def test_no_update_leaves_the_lists_as_they_stand(self):
+        repo, old, new = self.make_change()
+
+        status, out = self.run_bare(repo, old, new, "questing", "--no-update")
+
+        self.assertEqual(0, status)
+        self.assertEqual([], self.chdist_calls())
+
+    def test_a_chdist_given_as_a_path_is_refreshed_where_it_lives(self):
+        # Addressed the way the chdist tool addresses one, so that what gets
+        # refreshed is what gets germinated against.
+        repo, old, new = self.make_change()
+        path = os.path.join(self.chdist_base, "questing")
+
+        status, out = self.run_bare(repo, old, new, path)
+
+        self.assertEqual(0, status)
+        self.assertEqual(["-d %s apt-get questing update" % self.chdist_base],
+                         self.chdist_calls())
+
+    def test_a_chdist_that_does_not_exist_is_not_refreshed(self):
+        # Saying which chdist is meant beats chdist failing to update it.
+        repo, old, new = self.make_change()
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            status, out = self.run_bare(repo, old, new, "nosuchchdist")
+
+        self.assertEqual(1, status)
+        self.assertEqual([], self.chdist_calls())
+
+
+class TestProgress(CliTestCase):
+    """What each run says on stderr while it works."""
+
+    def make_change(self):
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu.questing",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write(os.path.join(repo, "desktop"), " * gimp\n")
+        return repo, old, self.commit(repo, "change")
+
+    def run_capturing(self, *args):
+        argv = [
+            "--germinate",
+            FAKE_GERMINATE,
+            "--chdist-base",
+            self.chdist_base,
+            "--no-update",
+        ] + list(args)
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            status = main(argv)
+        return status, out.getvalue(), err.getvalue()
+
+    def test_progress_is_reported_without_being_asked(self):
+        # Two germinations of a real collection take long enough that
+        # silence looks like a hang, and the report goes to stdout, so
+        # saying what is happening costs the output nothing.
+        repo, old, new = self.make_change()
+
+        status, out, err = self.run_capturing(repo, old, new, "questing")
+
+        self.assertEqual(0, status)
+        self.assertIn("+gimp", out)
+        self.assertIn("collection under test: ubuntu.questing", err)
+        self.assertIn("archive metadata", err)
+        self.assertNotIn("germidiff:", out)
+
+    def test_quiet_keeps_it_to_problems(self):
+        repo, old, new = self.make_change()
+
+        status, out, err = self.run_capturing(repo, old, new, "questing", "-q")
+
+        self.assertEqual(0, status)
+        self.assertIn("+gimp", out)
+        self.assertEqual("", err)
+
+    def test_verbose_adds_the_commands_themselves(self):
+        repo, old, new = self.make_change()
+
+        status, out, err = self.run_capturing(repo, old, new, "questing", "-v")
+
+        self.assertEqual(0, status)
+        self.assertIn("adding worktree", err)

@@ -19,7 +19,7 @@ import io
 import os
 from contextlib import redirect_stdout
 
-from germidiff import launchpad, mpcli
+from germidiff import cli, launchpad, mpcli
 from germidiff.mpcli import main, parse_args
 from tests.helpers import FAKE_GERMINATE, GitTestCase
 
@@ -128,6 +128,8 @@ class MpTestCase(GitTestCase):
             "--chdist-base", self.chdist_base,
             "--chdist", "questing",
             "--seed-source", self.upstream + "/",
+            "--no-update",
+            "--quiet",
         ] + list(args)
         out = io.StringIO()
         with redirect_stdout(out):
@@ -351,21 +353,21 @@ class TestArguments(MpTestCase):
     def test_components_default_to_what_the_collection_implies(self):
         args = self.parse()
         self.assertEqual(
-            ("main", "restricted"), mpcli._components(args, "ubuntu")
+            ("main", "restricted"), cli.components_for(args, "ubuntu")
         )
         self.assertEqual(
             ("main", "restricted", "universe", "multiverse"),
-            mpcli._components(args, "kubuntu"),
+            cli.components_for(args, "kubuntu"),
         )
 
     def test_components_can_be_overridden(self):
         args = self.parse("--components", "main,universe")
         self.assertEqual(
-            ("main", "universe"), mpcli._components(args, "ubuntu")
+            ("main", "universe"), cli.components_for(args, "ubuntu")
         )
         args = self.parse("--components", "main universe")
         self.assertEqual(
-            ("main", "universe"), mpcli._components(args, "ubuntu")
+            ("main", "universe"), cli.components_for(args, "ubuntu")
         )
 
     def test_work_dir_implies_keep(self):
@@ -375,3 +377,94 @@ class TestArguments(MpTestCase):
         args = self.parse("--whole-seed-lists", "--probe-retention")
         self.assertTrue(args.whole_seed_lists)
         self.assertTrue(args.probe_retention)
+
+
+class TestChdistHandling(MpTestCase):
+    """Making, taking and refreshing the archive metadata."""
+
+    def setUp(self):
+        super().setUp()
+        self.use_stub_chdist(self.temp_dir)
+        self.fresh_base = os.path.join(self.temp_dir, "new-chdists")
+        self.make_collection("platform", "base:\n", {"base": ["libc"]})
+        self.make_collection(
+            "ubuntu",
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox"]},
+        )
+
+    def propose(self):
+        fork = self.fork("mine")
+        self.write_collection(
+            fork,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["firefox", "thunderbird"]},
+        )
+        self.commit(fork, "seed thunderbird")
+        self.set_proposal("ubuntu")
+        return {"ubuntu": fork}
+
+    def run_derived(self, *args, **kwargs):
+        """Run without the --chdist and --no-update the other tests pass."""
+        base = kwargs.pop("base", self.fresh_base)
+        urls = self.propose()
+        argv = [
+            "https://code.launchpad.net/~someone/ubuntu-seeds/+git/ubuntu"
+            "/+merge/42",
+            "--germinate", FAKE_GERMINATE,
+            "--cache-dir", self.cache,
+            "--chdist-base", base,
+            "--seed-source", self.upstream + "/",
+            "--quiet",
+        ] + list(args)
+        original = launchpad.git_url_for
+
+        def git_url_for(api_link):
+            name = launchpad.repo_name(api_link)
+            return urls.get(name, os.path.join(self.upstream, name))
+
+        launchpad.git_url_for = git_url_for
+        mpcli.git_url_for = git_url_for
+        self.addCleanup(self._restore_git_url, original)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            status = main(argv)
+        return status, out.getvalue()
+
+    def test_the_proposal_says_which_chdist_to_make(self):
+        status, text = self.run_derived()
+
+        self.assertEqual(0, status)
+        self.assertIn("+thunderbird", text)
+        created = self.chdist_calls()[0]
+        self.assertIn("create questing", created)
+        self.assertIn("main restricted", created)
+
+    def test_the_chdist_is_refreshed_once(self):
+        # germidiff-mp settles the chdist before germinating and hands it
+        # down; the diff must not pay for a second apt-get update.
+        self.run_derived()
+
+        updates = [
+            call for call in self.chdist_calls() if "apt-get" in call
+        ]
+        self.assertEqual(1, len(updates))
+
+    def test_a_chdist_given_is_refreshed_too(self):
+        status, text = self.run_derived(
+            "--chdist", "questing", base=self.chdist_base
+        )
+
+        self.assertEqual(0, status)
+        self.assertEqual(
+            ["-d %s apt-get questing update" % self.chdist_base],
+            self.chdist_calls(),
+        )
+
+    def test_no_update_leaves_the_lists_as_they_stand(self):
+        status, text = self.run_derived(
+            "--chdist", "questing", "--no-update", base=self.chdist_base
+        )
+
+        self.assertEqual(0, status)
+        self.assertEqual([], self.chdist_calls())

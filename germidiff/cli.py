@@ -19,11 +19,20 @@ import argparse
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
 from germidiff import VERSION
-from germidiff.chdist import chdist_base
+from germidiff.chdist import (
+    ChdistError,
+    DEFAULT_MIRROR,
+    chdist_base,
+    chdist_location,
+    components_for_collection,
+    ensure_chdist,
+    update_chdist,
+)
 from germidiff.diff import diff_runs
 from germidiff.metapackage import pending_edges
 from germidiff.probe import ProbeError, probe_cuts
@@ -44,6 +53,7 @@ from germidiff.runner import (
     resolve_dependencies,
     run_germinate,
 )
+from germidiff.seedtree import split_branch
 from germidiff.structure import StructureError
 from germidiff.worktree import (
     GitError,
@@ -59,6 +69,27 @@ _logger = logging.getLogger("germidiff")
 # should not happen for one made by 'chdist create'.
 DEFAULT_ARCH = "amd64"
 
+
+def host_arch():
+    """The architecture to create a chdist for when nothing says otherwise.
+
+    Only needed for a chdist that does not exist yet: an existing one is
+    asked what it was made for.
+    """
+    try:
+        proc = subprocess.run(
+            ["dpkg", "--print-architecture"],
+            capture_output=True,
+            encoding="UTF-8",
+            errors="replace",
+        )
+    except OSError:
+        return DEFAULT_ARCH
+    if proc.returncode != 0:
+        return DEFAULT_ARCH
+    return proc.stdout.strip() or DEFAULT_ARCH
+
+
 DESCRIPTION = """\
 Show the consequences of a proposed change to an Ubuntu seed collection.
 
@@ -67,6 +98,11 @@ collection at OLD-REF and once at NEW-REF -- and diffs the resulting expanded
 per-seed package lists.  Any other seed collection the one under test depends
 on is held fixed at the checkout beside it, so the diff reflects only the seed
 change.
+
+With no CHDIST, the archive to read is worked out from the collection's own
+branch name: ubuntu.resolute is the resolute archive, and the ubuntu
+collection germinates against main and restricted.  A chdist for that is
+created if it is not there already, and refreshed before the runs.
 """
 
 EPILOG = """\
@@ -75,9 +111,45 @@ collection -- is read from the directory of that name beside SEED-REPO, which
 is where seed branches are normally checked out.  germidiff-mp clones them
 there for you; locally they are expected to be in place already.
 
+Progress goes to standard error and the report to standard output, so the
+report can be redirected on its own.
+
 Exits 0 when both germinate runs succeeded, whether or not there were any
 differences, and nonzero if anything went wrong.
 """
+
+
+def log_level(args):
+    """How much to say on stderr.
+
+    Progress is on by default: a run germinates twice over a real archive
+    and can sit for a minute with nothing to show, and the report goes to
+    stdout, so saying what is happening costs the output nothing.
+    """
+    if args.quiet:
+        return logging.WARNING
+    return logging.DEBUG if args.verbose else logging.INFO
+
+
+def configure_logging(args, prefix):
+    """Send progress to standard error, at the level the options ask for.
+
+    Set up on germidiff's own logger rather than through basicConfig, which
+    configures the root logger once per process and then quietly does
+    nothing -- leaving anything that runs a second command in the same
+    process writing to the first one's stderr.
+    """
+    logger = logging.getLogger("germidiff")
+    for handler in list(logger.handlers):
+        # Only ours: a caller's handlers, and the one unittest attaches to
+        # watch for warnings, are none of our business.
+        if getattr(handler, "germidiff_progress", False):
+            logger.removeHandler(handler)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%s: %%(message)s" % prefix))
+    handler.germidiff_progress = True
+    logger.addHandler(handler)
+    logger.setLevel(log_level(args))
 
 
 def add_analysis_options(parser):
@@ -157,8 +229,68 @@ def add_analysis_options(parser):
         "-v",
         "--verbose",
         action="store_true",
-        help="report progress on stderr",
+        help="also report every command run, not just what is going on",
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="report only problems, not progress",
+    )
+
+
+def add_chdist_options(parser):
+    """Add the options that shape the chdist the archive is read through.
+
+    Shared with germidiff-mp: both commands work out a chdist from the
+    collection and series unless they are handed one, and both have to be
+    able to say what the archive should look like when they do.
+    """
+    parser.add_argument(
+        "--chdist-base",
+        metavar="DIR",
+        help="directory germidiff keeps its chdists in (default: "
+        "%s); pass ~/.chdist to use the ones you made yourself" % (
+            chdist_base(),
+        ),
+    )
+    parser.add_argument(
+        "--mirror",
+        metavar="URL",
+        default=DEFAULT_MIRROR,
+        help="archive to create a missing chdist against (default: "
+        "%(default)s)",
+    )
+    parser.add_argument(
+        "--components",
+        metavar="LIST",
+        help="components to germinate against, space or comma separated, "
+        "overriding what the collection implies",
+    )
+    parser.add_argument(
+        "--no-check-components",
+        dest="check_components",
+        action="store_false",
+        default=True,
+        help="use an existing chdist even if it does not offer exactly the "
+        "components this collection germinates against",
+    )
+    parser.add_argument(
+        "--no-update",
+        dest="update",
+        action="store_false",
+        default=True,
+        help="germinate against the apt lists as they stand instead of "
+        "refreshing them first; a chdist that had to be created is updated "
+        "regardless, having no lists at all",
+    )
+
+
+def components_for(args, collection):
+    """The components a collection germinates against, --components winning."""
+    if args.components:
+        return tuple(args.components.replace(",", " ").split())
+    return components_for_collection(collection)
 
 
 def parse_args(argv=None):
@@ -185,9 +317,11 @@ def parse_args(argv=None):
     parser.add_argument(
         "chdist",
         metavar="CHDIST",
+        nargs="?",
         help="chdist providing the archive metadata for both runs: the name "
         "of one under --chdist-base, or the path to any chdist directory or "
-        "apt.conf",
+        "apt.conf (default: the one the collection's branch name implies, "
+        "created if it is not there already)",
     )
 
     parser.add_argument(
@@ -197,14 +331,7 @@ def parse_args(argv=None):
         help="branch name of the collection under test, as it would appear "
         "in an 'include' line (default: the repo's directory name)",
     )
-    parser.add_argument(
-        "--chdist-base",
-        metavar="DIR",
-        help="directory germidiff keeps its chdists in (default: "
-        "%s); pass ~/.chdist to use the ones you made yourself" % (
-            chdist_base(),
-        ),
-    )
+    add_chdist_options(parser)
     add_analysis_options(parser)
 
     args = parser.parse_args(argv)
@@ -226,6 +353,48 @@ def _make_work_dir(args):
         os.makedirs(args.work_dir, exist_ok=True)
         return os.path.abspath(args.work_dir), False
     return tempfile.mkdtemp(prefix="germidiff-"), not args.keep
+
+
+def resolve_chdist(args, seed_dist):
+    """The chdist both runs read the archive through.
+
+    Given one, take it as it stands and refresh it; given none, work it out
+    from the branch name the way germidiff-mp works it out from a merge
+    proposal -- ubuntu.resolute is the ubuntu collection of the resolute
+    series -- and create it if it is not there.
+    """
+    if args.chdist is not None:
+        # Resolved before being refreshed, so that a name that means nothing
+        # is reported as such rather than by chdist failing to update it.
+        apt_config = apt_config_for_chdist(args.chdist, args.chdist_base)
+        if args.update:
+            base, name = chdist_location(args.chdist, args.chdist_base)
+            update_chdist(name, base)
+        return args.chdist, apt_config
+
+    collection, series = split_branch(seed_dist)
+    if series is None:
+        raise GerminateError(
+            "cannot tell which archive %s means: a branch name is read as "
+            "collection.series, as germinate reads it, so %s says nothing "
+            "about a series.  Name a chdist, or give the branch with "
+            "--seed-dist" % (seed_dist, seed_dist)
+        )
+    components = components_for(args, collection)
+    _logger.info(
+        "%s is the %s collection of %s, germinated against %s",
+        seed_dist, collection, series, " ".join(components),
+    )
+    chdist = ensure_chdist(
+        series,
+        components,
+        args.arch or host_arch(),
+        base=args.chdist_base,
+        mirror=args.mirror,
+        update=args.update,
+        check_components=args.check_components,
+    )
+    return chdist, apt_config_for_chdist(chdist, args.chdist_base)
 
 
 def _one_side(
@@ -268,7 +437,7 @@ def run(args):
         seed_dist = os.path.basename(repo.rstrip(os.sep))
     _logger.info("collection under test: %s (%s)", seed_dist, repo)
 
-    apt_config = apt_config_for_chdist(args.chdist, args.chdist_base)
+    chdist, apt_config = resolve_chdist(args, seed_dist)
     if args.arch is None:
         args.arch = arch_for_apt_config(apt_config) or DEFAULT_ARCH
     else:
@@ -278,7 +447,7 @@ def run(args):
                 "chdist %s carries %s, not %s; germinating for an "
                 "architecture it does not have still succeeds, but the "
                 "result comes from the wrong Packages files",
-                args.chdist,
+                chdist,
                 "/".join(available),
                 args.arch,
             )
@@ -455,14 +624,11 @@ def run(args):
 
 def main(argv=None):
     args = parse_args(argv)
-    logging.basicConfig(
-        format="germidiff: %(message)s",
-        level=logging.INFO if args.verbose else logging.WARNING,
-        stream=sys.stderr,
-    )
+    configure_logging(args, "germidiff")
     try:
         text = run(args)
     except (
+        ChdistError,
         GerminateError,
         GitError,
         StructureError,

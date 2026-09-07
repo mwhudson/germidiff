@@ -29,33 +29,6 @@ from germidiff.chdist import (
 )
 from tests.helpers import TestCase
 
-# A stub standing in for devscripts' chdist, recording how it was called and
-# writing just enough of a chdist for the checks to have something to read.
-STUB_CHDIST = """\
-#! /usr/bin/env python3
-import os
-import sys
-
-args = sys.argv[1:]
-with open(os.environ["CHDIST_LOG"], "a") as log:
-    log.write(" ".join(args) + "\\n")
-
-base = args[args.index("-d") + 1]
-if not os.path.isdir(base):
-    # The real chdist resolves its data directory with abs_path(), which
-    # gives up on one that does not exist and leaves it working from an
-    # undefined path.
-    sys.stderr.write("can't open dir %s\\n" % base)
-    sys.exit(1)
-if "create" in args:
-    rest = args[args.index("create") + 1:]
-    name, mirror, series, components = rest[0], rest[1], rest[2], rest[3:]
-    directory = os.path.join(base, name, "etc", "apt")
-    os.makedirs(directory)
-    with open(os.path.join(directory, "sources.list"), "w") as f:
-        f.write("deb %s %s %s\\n" % (mirror, series, " ".join(components)))
-"""
-
 
 class TestComponentsForCollection(TestCase):
     def test_ubuntu_and_platform_get_main_and_restricted(self):
@@ -176,24 +149,10 @@ class TestEnsureChdist(TestCase):
         self.temp_dir = self.make_temp_dir()
         self.base = os.path.join(self.temp_dir, "chdists")
         os.makedirs(self.base)
-        self.log = os.path.join(self.temp_dir, "calls")
-        stub_dir = os.path.join(self.temp_dir, "bin")
-        path = self.write(os.path.join(stub_dir, "chdist"), STUB_CHDIST)
-        os.chmod(path, 0o755)
-        os.environ["PATH"] = stub_dir + os.pathsep + os.environ["PATH"]
-        os.environ["CHDIST_LOG"] = self.log
-        self.addCleanup(os.environ.pop, "CHDIST_LOG", None)
-        self.original_path = os.environ["PATH"]
-        self.addCleanup(self._restore_path, os.environ["PATH"])
-
-    def _restore_path(self, path):
-        os.environ["PATH"] = path.split(os.pathsep, 1)[1]
+        self.use_stub_chdist(self.temp_dir)
 
     def calls(self):
-        if not os.path.exists(self.log):
-            return []
-        with open(self.log) as f:
-            return [line.strip() for line in f if line.strip()]
+        return self.chdist_calls()
 
     def existing(self, name, text):
         self.write(
