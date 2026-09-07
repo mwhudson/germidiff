@@ -20,10 +20,13 @@ import os
 import shutil
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 from germidiff.cli import main
+from germidiff.probe import ProbeResult
 from germidiff.runner import (
     GerminateError,
+    GerminateRun,
     apt_config_for_chdist,
     arch_for_apt_config,
     architectures_for_apt_config,
@@ -504,6 +507,60 @@ class TestRetentionEndToEnd(CliTestCase):
         )
         self.assertEqual(0, status)
         self.assertIn("! build-essential: only by dpkg-dev", out)
+
+
+class TestMetapackageProbeWithExtra(CliTestCase):
+    """--include-extra when the metapackage probe replaces the new run.
+
+    The probe germinates in-process and covers only the real seeds, so its
+    run has no "extra" seed; diffed against an old run that has one, "extra"
+    would show up as a removed seed.
+    """
+
+    def make_trees(self):
+        self.make_platform()
+        repo = self.make_seed_repo(
+            "ubuntu.questing",
+            "include platform.questing\ndesktop: base\n",
+            # ubuntu-desktop is seeded in the very seed it stands for, so it
+            # is recognised as this collection's metapackage, and the change
+            # drops dropped-pkg from that seed while ubuntu-desktop still
+            # depends on it -- the lag the probe exists to explain.
+            {"desktop": ["dropped-pkg", "ubuntu-desktop+dropped-pkg"]},
+        )
+        old = self.commit(repo, "initial")
+        self.write_collection(
+            repo,
+            "include platform.questing\ndesktop: base\n",
+            {"desktop": ["ubuntu-desktop+dropped-pkg"]},
+        )
+        new = self.commit(repo, "stop seeding the package")
+        return repo, old, new
+
+    def test_extra_is_not_reported_as_a_removed_seed(self):
+        repo, old, new = self.make_trees()
+        # There is no importable germinate here, so the probe cannot really
+        # run; answer as it would, with the new run's real seeds only.
+        after = GerminateRun(
+            "probe",
+            None,
+            ["base", "desktop"],
+            {
+                "base": {"libc"},
+                "desktop": {"dropped-pkg", "ubuntu-desktop"},
+            },
+            inherit={"base": [], "desktop": ["base"]},
+        )
+        with mock.patch(
+            "germidiff.cli.probe_cuts",
+            return_value=ProbeResult([], after=after),
+        ):
+            status, out = self.run_cli(repo, old, new, "--include-extra")
+        self.assertEqual(0, status)
+        # The probe answered and its run was used for the diff...
+        self.assertIn("**assuming the metapackages are rebuilt**", out)
+        # ...without "extra" appearing to have been removed.
+        self.assertNotIn("removed seed", out)
 
 
 class TestCollectionDiscovery(CliTestCase):

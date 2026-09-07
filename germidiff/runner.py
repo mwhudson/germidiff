@@ -323,6 +323,28 @@ class GerminateRun:
             result |= packages
         return result
 
+    def without_extra(self):
+        """This run without germinate's ``extra`` pseudo-seed.
+
+        A probe run (see :mod:`germidiff.probe`) covers only the real
+        seeds, so diffing one against a run read with ``--include-extra``
+        would report ``extra`` itself as a removed seed.  Drop it from the
+        other side before diffing.
+        """
+        if EXTRA_SEED not in self.seeds:
+            return self
+        return GerminateRun(
+            self.label,
+            self.ref,
+            [name for name in self.seed_names if name != EXTRA_SEED],
+            {
+                name: packages
+                for name, packages in self.seeds.items()
+                if name != EXTRA_SEED
+            },
+            inherit=self.inherit,
+        )
+
 
 def _read_seed_json(out_dir, seedname):
     path = os.path.join(out_dir, "%s.json" % seedname)

@@ -556,6 +556,11 @@ def run(args, chdist=None):
                         metapackages = []
                     else:
                         new_run = rebuilt.after
+                        # The probe germinates only the real seeds, so an
+                        # "extra" seed from --include-extra has no
+                        # counterpart on this side; left in place it would
+                        # show up in the diff as a removed seed.
+                        old_run = old_run.without_extra()
                         retained = without_edges(
                             find_retained(old_out, new_out, new_run),
                             metapackages,

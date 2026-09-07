@@ -147,6 +147,39 @@ class TestDiffRuns(TestCase):
         )
 
 
+class TestWithoutExtra(TestCase):
+    """Dropping the "extra" pseudo-seed from a run that has it.
+
+    The metapackage probe germinates only the real seeds, so when its run
+    replaces the new side of a diff the old side's "extra" seed (present
+    under --include-extra) has no counterpart and must be dropped first.
+    """
+
+    def test_drops_the_extra_seed(self):
+        run = make_run(
+            "old", {"desktop": ["a"], "extra": ["z"]},
+            seed_names=["desktop", "extra"],
+        )
+        stripped = run.without_extra()
+        self.assertEqual(["desktop"], stripped.seed_names)
+        self.assertEqual({"desktop": {"a"}}, stripped.seeds)
+        self.assertEqual(run.label, stripped.label)
+        self.assertEqual(run.ref, stripped.ref)
+
+    def test_a_run_without_extra_is_untouched(self):
+        run = make_run("old", {"desktop": ["a"]})
+        self.assertIs(run, run.without_extra())
+
+    def test_a_stripped_run_diffs_cleanly_against_a_probe_run(self):
+        old = make_run(
+            "old", {"desktop": ["a"], "extra": []},
+            seed_names=["desktop", "extra"],
+        )
+        probed = make_run("probe", {"desktop": ["a"]})
+        diff = diff_runs(old.without_extra(), probed)
+        self.assertFalse(diff.changed)
+
+
 class TestSeedContents(TestCase):
     """What a seed contains, as against what it newly accounts for."""
 
