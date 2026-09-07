@@ -21,7 +21,6 @@ import os
 import subprocess
 
 from germidiff.chdist import chdist_base
-from germidiff.collection_map import validate_entry
 from germidiff.structure import (
     StructureError,
     inherited_seeds,
@@ -205,8 +204,8 @@ def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):
     Germinate looks for a branch's seeds at ``<seed-base>/<branch>/``, both
     for the branch named by ``--seed-dist`` and for any branch named by an
     ``include`` line, so a directory of symlinks is all it takes to point it
-    at local checkouts.  The collection under test always wins over an entry
-    of the same name in the collection map.
+    at local checkouts.  The collection under test always wins over a
+    checkout of the same name found beside the repo.
 
     Only whole collections get a symlink.  A branch name may be a path --
     ``include ubuntu.stonking/languages`` names a collection nested inside
@@ -230,9 +229,7 @@ def build_seed_base(base_dir, under_test_branch, under_test_dir, branch_dirs):
     return base_dir
 
 
-def resolve_dependencies(
-    under_test_branch, under_test_dir, collection_map, neighbours=None
-):
+def resolve_dependencies(under_test_branch, under_test_dir, neighbours):
     """Find the local directory for every branch the collection needs.
 
     Returns a ``(directories, links)`` pair.  ``directories`` maps every
@@ -241,11 +238,11 @@ def resolve_dependencies(
     seed source directory, which is to say the whole collections rather than
     those nested inside one.  Raises GerminateError naming what is missing.
 
-    A branch is looked for, in order, in the collection map, inside a
-    collection already resolved (for a nested name like
-    ``ubuntu.stonking/languages``), and then among ``neighbours`` -- the
-    directories beside the repo under test, which is where a seed branch
-    usually has its siblings checked out.
+    A branch is looked for inside a collection already resolved (for a nested
+    name like ``ubuntu.stonking/languages``), and otherwise among
+    ``neighbours`` -- directories holding collections checked out beside each
+    other under their branch names, which is both how they are normally kept
+    locally and how germidiff-mp lays out the ones it clones.
     """
     resolved = {under_test_branch: under_test_dir}
     nested = set()
@@ -253,20 +250,6 @@ def resolve_dependencies(
     def resolve(branch):
         if branch in resolved:
             return resolved[branch]
-
-        directory = collection_map.get(branch)
-        if directory is not None:
-            # Checked here rather than at load time, so that a map listing
-            # collections this run does not need never gets in the way.
-            validate_entry(branch, directory)
-            if "/" in branch:
-                raise GerminateError(
-                    "collection %s is nested inside %s and is read from "
-                    "there; it cannot be mapped to %s"
-                    % (branch, branch.split("/", 1)[0], directory)
-                )
-            resolved[branch] = directory
-            return directory
 
         # "include ubuntu.stonking/languages" names a collection inside
         # ubuntu.stonking, so it comes with its parent and needs nothing
@@ -301,16 +284,10 @@ def resolve_dependencies(
         ]
         for branch, included_by in missing:
             lines.append("  %s (included by %s)" % (branch, included_by))
-        if neighbours:
-            lines.append(
-                "Checked out beside the seed repo (%s) or named with "
-                "--collection." % ", ".join(neighbours)
-            )
-        else:
-            lines.append(
-                "Add them to the collection map (see --collection-map and "
-                "--collection)."
-            )
+        lines.append(
+            "Check them out under those names beside the seed repo (%s)."
+            % ", ".join(neighbours)
+        )
         raise GerminateError("\n".join(lines))
 
     directories = {branch: resolved[branch] for branch in order}

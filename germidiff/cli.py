@@ -24,11 +24,6 @@ import tempfile
 
 from germidiff import VERSION
 from germidiff.chdist import chdist_base
-from germidiff.collection_map import (
-    CollectionMapError,
-    DEFAULT_CONFIG_PATHS,
-    load_collection_map,
-)
 from germidiff.diff import diff_runs
 from germidiff.metapackage import pending_edges
 from germidiff.probe import ProbeError, probe_cuts
@@ -70,31 +65,19 @@ Show the consequences of a proposed change to an Ubuntu seed collection.
 Runs germinate twice against the same archive metadata -- once with the seed
 collection at OLD-REF and once at NEW-REF -- and diffs the resulting expanded
 per-seed package lists.  Any other seed collection the one under test depends
-on is held fixed at a local checkout, so the diff reflects only the seed
+on is held fixed at the checkout beside it, so the diff reflects only the seed
 change.
 """
 
 EPILOG = """\
-The collection map tells germidiff where the seed collections that this
-one includes live locally.  It is an ini file with a [collections] section
-mapping branch name to directory, for example:
-
-  [collections]
-  platform.questing = ~/seeds/platform
-
-With no --collection-map, it is read from the first of these that exists:
-
-%s
-
---collection-map replaces that search with a file of your choosing, and
---collection adds or overrides individual entries on top of whichever file
-was used.
+A collection the one under test includes -- in practice the platform
+collection -- is read from the directory of that name beside SEED-REPO, which
+is where seed branches are normally checked out.  germidiff-mp clones them
+there for you; locally they are expected to be in place already.
 
 Exits 0 when both germinate runs succeeded, whether or not there were any
 differences, and nonzero if anything went wrong.
-""" % "\n".join(
-    "  " + path for path in DEFAULT_CONFIG_PATHS
-)
+"""
 
 
 def add_analysis_options(parser):
@@ -212,22 +195,7 @@ def parse_args(argv=None):
         "--seed-dist",
         metavar="BRANCH",
         help="branch name of the collection under test, as it would appear "
-        "in an 'include' line (default: looked up in the collection map by "
-        "path, falling back to the repo's directory name)",
-    )
-    parser.add_argument(
-        "--collection-map",
-        metavar="FILE",
-        help="ini file mapping seed collection branch names to local "
-        "checkouts (default: the first of the paths listed below that "
-        "exists)",
-    )
-    parser.add_argument(
-        "--collection",
-        metavar="BRANCH=DIR",
-        action="append",
-        default=[],
-        help="add or override one collection map entry; repeatable",
+        "in an 'include' line (default: the repo's directory name)",
     )
     parser.add_argument(
         "--chdist-base",
@@ -295,15 +263,7 @@ def run(args):
     old_commit = resolve_ref(repo, args.old_ref)
     new_commit = resolve_ref(repo, args.new_ref)
 
-    collection_map = load_collection_map(
-        config_path=args.collection_map, overrides=args.collection
-    )
-    if collection_map.source:
-        _logger.info("collection map: %s", collection_map.source)
-
     seed_dist = args.seed_dist
-    if seed_dist is None:
-        seed_dist = collection_map.branch_for_path(repo)
     if seed_dist is None:
         seed_dist = os.path.basename(repo.rstrip(os.sep))
     _logger.info("collection under test: %s (%s)", seed_dist, repo)
@@ -350,14 +310,14 @@ def run(args):
             # take the union of what each side needs.
             # Seed collections are normally checked out beside each
             # other, named for their branch, which is the same layout
-            # germinate resolves a seed source against -- so look there
-            # before asking for a collection map.
+            # germinate resolves a seed source against -- and the one
+            # germidiff-mp clones into its cache.
             neighbours = [os.path.dirname(repo)]
             branch_dirs = {}
             nested = set()
             for checkout in (old_co, new_co):
                 directories, links = resolve_dependencies(
-                    seed_dist, checkout, collection_map, neighbours
+                    seed_dist, checkout, neighbours
                 )
                 branch_dirs.update(links)
                 nested.update(set(directories) - set(links))
@@ -503,7 +463,6 @@ def main(argv=None):
     try:
         text = run(args)
     except (
-        CollectionMapError,
         GerminateError,
         GitError,
         StructureError,

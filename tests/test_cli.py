@@ -52,16 +52,13 @@ class CliTestCase(GitTestCase):
         return repo
 
     def make_platform(self, packages=("libc",)):
-        platform = self.write_collection(
-            os.path.join(self.temp_dir, "platform"),
+        # Beside the repo under test, named for its branch: the layout seed
+        # branches are checked out in, and the only place germidiff looks.
+        return self.write_collection(
+            os.path.join(self.temp_dir, "platform.questing"),
             "base:\n",
             {"base": packages},
         )
-        self.write(
-            os.path.join(self.temp_dir, "collections.conf"),
-            "[collections]\nplatform.questing = %s\n" % platform,
-        )
-        return platform
 
     def run_cli(self, *args):
         argv = [
@@ -69,8 +66,6 @@ class CliTestCase(GitTestCase):
             FAKE_GERMINATE,
             "--chdist-base",
             self.chdist_base,
-            "--collection-map",
-            os.path.join(self.temp_dir, "collections.conf"),
         ] + list(args)
         out = io.StringIO()
         with redirect_stdout(out):
@@ -207,19 +202,18 @@ class TestEndToEnd(CliTestCase):
         self.assertEqual("No changes to any expanded package list.\n", out)
 
     def test_testing_the_platform_collection_itself(self):
-        # The collection under test is the one the map calls
-        # platform.questing; its own worktrees must win over the map entry.
-        platform_repo = self.make_repo(os.path.join(self.temp_dir, "platform"))
+        # The collection under test sits beside itself, so it is a candidate
+        # for its own include lines; each side's worktree must win over the
+        # checkout, or neither ref would be the one germinated.
+        platform_repo = self.make_repo(
+            os.path.join(self.temp_dir, "platform.questing")
+        )
         self.write_collection(platform_repo, "base:\n", {"base": ["libc"]})
         old = self.commit(platform_repo, "initial")
         self.write_collection(
             platform_repo, "base:\n", {"base": ["libc", "systemd"]}
         )
         new = self.commit(platform_repo, "add systemd")
-        self.write(
-            os.path.join(self.temp_dir, "collections.conf"),
-            "[collections]\nplatform.questing = %s\n" % platform_repo,
-        )
 
         status, out = self.run_cli(platform_repo, old, new, "questing")
         self.assertEqual(0, status)
@@ -259,10 +253,6 @@ class TestFailures(CliTestCase):
         self.assertEqual("", out)
 
     def test_missing_dependent_collection_is_an_error(self):
-        self.write(
-            os.path.join(self.temp_dir, "collections.conf"),
-            "[collections]\n",
-        )
         repo = self.make_seed_repo(
             "ubuntu", "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
@@ -274,12 +264,10 @@ class TestFailures(CliTestCase):
         self.assertEqual(1, status)
         self.assertEqual("", out)
 
-    def test_broken_collection_map_entry_is_an_error(self):
-        self.write(
-            os.path.join(self.temp_dir, "collections.conf"),
-            "[collections]\nplatform.questing = %s\n"
-            % os.path.join(self.temp_dir, "nowhere"),
-        )
+    def test_a_sibling_without_a_structure_is_not_a_collection(self):
+        # A directory of the right name is not enough: germinate would fail
+        # with a bare "could not open STRUCTURE" from inside its own run.
+        os.makedirs(os.path.join(self.temp_dir, "platform.questing"))
         repo = self.make_seed_repo(
             "ubuntu", "include platform.questing\ndesktop: base\n",
             {"desktop": ["firefox"]},
@@ -534,15 +522,11 @@ class TestRetentionEndToEnd(CliTestCase):
 class TestCollectionDiscovery(CliTestCase):
     """Finding dependent collections without being told where they are."""
 
-    def test_a_sibling_checkout_needs_no_collection_map(self):
+    def test_a_sibling_checkout_is_found_with_nothing_configured(self):
         # Seed collections are normally checked out beside each other, named
         # for their branch -- the same layout germinate resolves a seed
-        # source against.
-        self.write_collection(
-            os.path.join(self.temp_dir, "platform.questing"),
-            "base:\n",
-            {"base": ["libc"]},
-        )
+        # source against, and the one germidiff-mp clones into its cache.
+        self.make_platform()
         repo = self.make_repo(os.path.join(self.temp_dir, "ubuntu.questing"))
         self.write_collection(
             repo,
@@ -553,23 +537,9 @@ class TestCollectionDiscovery(CliTestCase):
         self.write(os.path.join(repo, "desktop"), " * gimp\n")
         new = self.commit(repo, "change")
 
-        # No --collection-map, no --collection.
-        out = io.StringIO()
-        with redirect_stdout(out):
-            status = main(
-                [
-                    "--germinate",
-                    FAKE_GERMINATE,
-                    "--chdist-base",
-                    self.chdist_base,
-                    repo,
-                    old,
-                    new,
-                    "questing",
-                ]
-            )
+        status, out = self.run_cli(repo, old, new, "questing")
         self.assertEqual(0, status)
-        self.assertIn("+gimp", out.getvalue())
+        self.assertIn("+gimp", out)
 
     def test_a_nested_collection_comes_with_its_parent(self):
         # "include ubuntu.questing/languages" names a collection inside the
@@ -601,37 +571,6 @@ class TestCollectionDiscovery(CliTestCase):
         self.assertIn("+hunspell-fr", out)
         self.assertIn("**desktop-fr**", out)
 
-    def test_mapping_a_nested_collection_is_refused(self):
-        # It is read from inside its parent, so pointing it elsewhere cannot
-        # work; saying so beats failing to create the symlink.
-        self.make_platform()
-        repo = self.make_seed_repo(
-            "ubuntu.questing",
-            "include platform.questing\n"
-            "include ubuntu.questing/languages\n"
-            "desktop: base\n",
-            {"desktop": ["firefox"]},
-        )
-        self.write_collection(
-            os.path.join(repo, "languages"), "desktop-fr: desktop\n",
-            {"desktop-fr": ["firefox-locale-fr"]},
-        )
-        old = self.commit(repo, "initial")
-        self.write(os.path.join(repo, "desktop"), " * gimp\n")
-        new = self.commit(repo, "change")
-
-        status, out = self.run_cli(
-            repo,
-            old,
-            new,
-            "questing",
-            "--collection",
-            "ubuntu.questing/languages=%s"
-            % os.path.join(repo, "languages"),
-        )
-        self.assertEqual(1, status)
-        self.assertEqual("", out)
-
     def test_a_missing_collection_still_reports_where_it_looked(self):
         repo = self.make_seed_repo(
             "ubuntu.questing",
@@ -642,22 +581,11 @@ class TestCollectionDiscovery(CliTestCase):
         self.write(os.path.join(repo, "desktop"), " * gimp\n")
         new = self.commit(repo, "change")
 
-        out, err = io.StringIO(), io.StringIO()
-        with redirect_stdout(out), redirect_stderr(err):
-            status = main(
-                [
-                    "--germinate",
-                    FAKE_GERMINATE,
-                    "--chdist-base",
-                    self.chdist_base,
-                    repo,
-                    old,
-                    new,
-                    "questing",
-                ]
-            )
+        err = io.StringIO()
+        with redirect_stderr(err):
+            status, out = self.run_cli(repo, old, new, "questing")
         self.assertEqual(1, status)
-        self.assertEqual("", out.getvalue())
+        self.assertEqual("", out)
         message = err.getvalue()
         self.assertIn("platform.questing", message)
         self.assertIn("beside the seed repo", message)

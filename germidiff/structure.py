@@ -5,8 +5,8 @@ and an ``include <branch>`` line inside a ``STRUCTURE`` file names another
 branch to be resolved against the *same* list of seed bases (see
 ``germinate.seeds.SingleSeedStructure`` and ``SeedStructure._parse``).  We
 parse just enough of that to work out which dependent collections a checkout
-needs, so we can tell the user which ones are missing from the collection map
-before handing anything to germinate.
+needs, so we can tell the user which ones are not checked out before
+handing anything to germinate.
 """
 
 # Copyright (C) 2026 Canonical Ltd.

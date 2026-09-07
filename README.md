@@ -313,7 +313,7 @@ server pulls in the platform collection through an `include` line in its
 `STRUCTURE` file. Only the collection under test should vary between the two
 runs, so every other collection is taken from a fixed local checkout.
 
-Usually nothing needs configuring. A branch is looked for beside the seed repo
+There is nothing to configure. A branch is looked for beside the seed repo
 under test, in a directory named after it — the layout seed branches are
 normally checked out in, and the same one germinate resolves a seed source
 against. With `/tmp/ubuntu.stonking` and `/tmp/platform.stonking` side by side,
@@ -323,38 +323,19 @@ this is the whole command:
 germidiff /tmp/ubuntu.stonking HEAD~1 HEAD stonking
 ```
 
+In practice that is the whole of it: what an outer collection includes is the
+platform collection, which anyone editing seeds locally already has checked
+out. `germidiff-mp` needs no checkouts at all, because it clones what a
+proposal needs into a cache laid out the same way.
+
 A branch name may itself be a path: `include ubuntu.stonking/languages` names a
 collection nested inside `ubuntu.stonking`. Those arrive with the collection
-that contains them and need nothing said about them either (and cannot be
-pointed elsewhere — the path leading to them runs through their parent).
+that contains them and need nothing said about them either.
 
-### The collection map
-
-When collections are not checked out beside each other, name them in a small
-hand-maintained map:
-
-```ini
-# ~/.config/germidiff/collections.conf
-[collections]
-platform.questing = ~/seeds/platform
-ubuntu.questing = ~/seeds/ubuntu
-```
-
-Keys are branch names exactly as they appear in `include` lines (and as
-germinate's `--seed-dist`); values are local checkouts, with relative paths
-resolved against the config file's directory. See `examples/collections.conf`.
-
-The map is read from `$XDG_CONFIG_HOME/germidiff/collections.conf` or
-`/etc/germidiff/collections.conf`, whichever exists first;
-`--collection-map FILE` uses a different file, and `--collection BRANCH=DIR`
-adds or overrides single entries without editing anything.
-
-If the collection under test needs a collection the map does not cover,
-germidiff says which ones are missing and who included them, rather than
-letting germinate fail with a bare "could not open STRUCTURE".
-
-A collection with no `include` lines — the platform collection itself, say —
-needs no map at all.
+If something is missing, germidiff says which collections they are and who
+included them, rather than letting germinate fail with a bare "could not open
+STRUCTURE". A collection with no `include` lines — the platform collection
+itself, say — needs nothing beside it.
 
 ## Examples
 
@@ -364,11 +345,11 @@ Diff a proposed change to an outer collection:
 germidiff ~/seeds/ubuntu main my-branch questing
 ```
 
-Diff a change to the platform collection itself, with the map supplied inline:
+Diff a change to the platform collection itself, which includes nothing and
+so needs nothing beside it:
 
 ```
-germidiff ~/seeds/platform HEAD~1 HEAD questing \
-    --collection platform.questing=~/seeds/platform
+germidiff ~/seeds/platform.questing HEAD~1 HEAD questing
 ```
 
 Keep the worktrees and germinate's own output around to look at:
@@ -382,7 +363,7 @@ germidiff ~/seeds/ubuntu main my-branch questing -v --work-dir /tmp/gd
 1. Two detached git worktrees of the seed repo are created, one at each ref.
 2. For each side, a seed source directory is built: a directory of symlinks,
    one named after the branch under test pointing at that side's worktree, and
-   one per entry in the collection map pointing at its fixed checkout.
+   one per included collection pointing at its checkout beside the repo.
 3. Germinate is run once per side with `--seed-source` pointing at that
    directory, `--seed-dist` naming the branch under test, and `--apt-config`
    pointing at the chdist. Each run gets its own output directory, since
@@ -392,7 +373,7 @@ germidiff ~/seeds/ubuntu main my-branch questing -v --work-dir /tmp/gd
 5. The lists are diffed per seed and in the union across seeds, and the result
    is printed.
 
-### How the collection map meets germinate
+### How that meets germinate
 
 This was the one part of the design that needed germinate's source read rather
 than guessed at. Germinate resolves a seed collection as
@@ -406,8 +387,9 @@ So germinate needs no telling where a dependent collection lives, as long as
 one exists at the path it expects. Building a directory of symlinks and
 pointing `--seed-source` at it is enough: the branch under test resolves to a
 worktree, everything it includes resolves to a fixed checkout, and germinate
-does the rest. If a map entry has the same name as the collection under test —
-when testing the platform collection itself, say — the worktree wins.
+does the rest. The collection under test always wins over a checkout of the
+same name beside the repo — which is what testing the platform collection
+itself amounts to, since it then sits among its own siblings.
 
 `tests/test_germinate_integration.py` checks this against germinate itself
 where it is installed, so a change to how germinate resolves seeds shows up as

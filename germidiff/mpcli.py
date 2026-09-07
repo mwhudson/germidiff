@@ -40,7 +40,6 @@ from germidiff.chdist import (
     components_for_collection,
     ensure_chdist,
 )
-from germidiff.collection_map import CollectionMapError
 from germidiff.launchpad import (
     LaunchpadError,
     git_url_for,
@@ -195,19 +194,6 @@ def parse_args(argv=None):
         "created is updated regardless, having no lists at all",
     )
     parser.add_argument(
-        "--collection-map",
-        metavar="FILE",
-        help="ini file pinning seed collections to local checkouts, used in "
-        "preference to the cache",
-    )
-    parser.add_argument(
-        "--collection",
-        metavar="BRANCH=DIR",
-        action="append",
-        default=[],
-        help="pin one collection to a local checkout; repeatable",
-    )
-    parser.add_argument(
         "--no-header",
         dest="header",
         action="store_false",
@@ -334,7 +320,6 @@ def main(argv=None):
         text = run(args)
     except (
         ChdistError,
-        CollectionMapError,
         GerminateError,
         GitError,
         LaunchpadError,
