@@ -194,85 +194,56 @@ different germination.
   chdist exists.
 * For `germidiff-mp` only: network access to Launchpad.
 
-## Setting up
+## What it works out for itself
 
-### A chdist
+### The chdist
 
 germidiff does not fetch or pin an archive snapshot. It reads the archive
 through a per-series chdist, handed to germinate as `--apt-config`.
 
-There is normally nothing to set up. Both commands work out which chdist they
-need, create it if it is missing, and refresh its package lists before
-germinating — once, ahead of both runs, so that an archive changing underneath
-them cannot show up as a seed change nobody made. `--no-update` germinates
-against the lists as they stand.
+Which chdist follows from the collection's branch name, which germinate reads
+as `collection.series`. `ubuntu.questing` is the ubuntu collection of the
+questing series, so the archive is questing; and the collection decides the
+components, main and restricted for ubuntu and platform, the whole archive for
+a flavour. The chdist is named for both — `questing`, or `questing-all` — and
+created if it is not there. `germidiff` takes the branch name from the repo's
+directory name unless `--seed-dist` says otherwise; `germidiff-mp` takes it
+from the proposal.
 
-What they need comes from the collection's branch name, which germinate reads
-as `collection.series`: `ubuntu.questing` is the ubuntu collection of the
-questing series, and the ubuntu collection germinates against main and
-restricted, so the chdist is `questing` on the questing archive. `germidiff`
-takes the branch name from the repo's directory name unless `--seed-dist` says
-otherwise; `germidiff-mp` takes it from the proposal.
+Its package lists are refreshed before the runs: once, ahead of both, so that
+an archive moving underneath them cannot show up as a seed change nobody made.
+`--no-update` germinates against the lists as they stand, which is worth
+having for a stream of runs one after another.
 
-Chdists live in a directory of germidiff's own, `~/.cache/germidiff/chdists`
-(`$XDG_CACHE_HOME/germidiff/chdists`), and *not* in the `~/.chdist` the
-`chdist` tool keeps for you. The names germidiff picks are exactly the ones
-you would have picked by hand, so sharing a directory would mean it either
-refused to run because yours carries the wrong components, or ran `apt-get
-update` on one you were deliberately holding still. `$CHDIST_HOME` is ignored
-for the same reason.
+None of this can be pointed at a chdist of your choosing. Germinate takes its
+components from the chdist alone — it ignores `--components` when given an
+`--apt-config` — so one carrying the wrong components does not fail, it
+produces a plausible report that is wrong; an existing chdist that does not
+match is therefore refused rather than used, though
+`--no-check-components` goes ahead anyway. `--components` overrides what the
+collection implies, by changing what is looked for. What this shuts
+out is germinating against a *different* archive, an old snapshot say, to look
+at a historical change; that wants naming as such rather than a chdist handed
+over and hoped for.
 
-There is no way to name a chdist instead. Which one answers a germination
-follows from the collection and the series, both runs have to agree on it, and
-a chdist that does not match what the collection germinates against produces a
-plausible report that is wrong — so it is worked out rather than chosen. What
-that shuts out is germinating against a *different* archive, an old snapshot
-say; if that turns out to be worth doing, it wants naming as such rather than
-by handing over a chdist and hoping.
+The chdists germidiff makes are its own, kept in `~/.cache/germidiff/chdists`
+(`$XDG_CACHE_HOME/germidiff/chdists`) rather than the `~/.chdist` the `chdist`
+tool keeps for you, so that creating and refreshing them cannot disturb one of
+yours under the same name. `$CHDIST_HOME` is ignored for the same reason, and
+`--chdist-base` moves the whole store.
 
-`--chdist-base` moves the whole store, which is as close as this gets:
-
-```
-germidiff ~/seeds/ubuntu.questing HEAD~1 HEAD --chdist-base /var/tmp/chdists
-```
-
-### Components
-
-Which archive components are in play is a property of the chdist, not of
-germidiff. Germinate ignores `--components` when given `--apt-config` and
-reads whatever indexes apt has, so germidiff never passes it.
-
-This matters because the platform and ubuntu collections are germinated
-against main and restricted, while flavours use every component. Both commands
-know which collection wants which, and name the chdist accordingly: `stonking`
-carries main and restricted, `stonking-all` the whole archive, and anything
-else spells its components out. `--components main,universe` overrides the
-choice, and an existing chdist carrying something other than what the
-collection wants is refused rather than used — `--no-check-components` goes
-ahead anyway.
-
-Getting it wrong does not fail, which is why that is an error and not a note.
-Germinating the platform collection against an all-components chdist quietly
-pulled 12 universe and multiverse packages (`ipmitool`, `isc-dhcp-server`,
-`amtterm`, …) into its closure and took `extra` from 2124 packages to 7144.
-The components actually used are reported as the run starts:
-
-```
-germidiff: archive metadata: ~/.cache/germidiff/chdists/stonking/etc/apt/apt.conf (amd64, main restricted)
-```
-
-### Architecture
+### The architecture
 
 The architecture is taken from the chdist (its `APT::Architecture`) rather
 than assumed — a chdist being created is made for this machine's own — because
 germinating against an architecture the chdist does not carry does not fail:
 it quietly produces a plausible-looking but meaningless diff, built from
-whichever Packages files apt does have. `--arch` overrides
-it, and germidiff then checks the architecture against the chdist's
-`APT::Architectures` and warns if it is not there. That check has to happen
-before germinating: afterwards the two are indistinguishable, since a
-wrong-architecture run of a real collection resolves about as many packages,
-and reports about as many problems, as a good one.
+whichever Packages files apt does have. `--arch` overrides it, and germidiff
+then checks it against the chdist's `APT::Architectures` and warns if it is
+not there. That check has to happen before germinating: afterwards the two are
+indistinguishable, since a wrong-architecture run of a real collection
+resolves about as many packages, and reports about as many problems, as a good
+one.
 
 ### Dependent collections
 
@@ -288,7 +259,7 @@ against. With `/tmp/ubuntu.stonking` and `/tmp/platform.stonking` side by side,
 this is the whole command:
 
 ```
-germidiff /tmp/ubuntu.stonking HEAD~1 HEAD stonking
+germidiff /tmp/ubuntu.stonking HEAD~1 HEAD
 ```
 
 In practice that is the whole of it: what an outer collection includes is the
@@ -471,10 +442,8 @@ Reusing the directory is the point: running over a stream of proposals should
 pay for the seed history once.
 
 **The chdist is named for the series and its components**, the same way
-`germidiff` names it — see [Components](#components) — and worked out from the
-proposal rather than from a directory name. A missing chdist is created, and
-the one used is refreshed before germinating unless `--no-update` says
-otherwise.
+`germidiff` names it — see [The chdist](#the-chdist) — and worked out from the
+proposal rather than from a directory name.
 
 `--dry-run` fetches everything and prints what it would germinate, which is
 the cheap way to check the resolution before paying for two germinations.

@@ -10,9 +10,12 @@ That second half matters more than it looks.  Germinate ignores
 ``--components`` when it is given an ``--apt-config``, so what a run can see
 is decided entirely by the chdist's ``sources.list`` -- and germinating the
 platform or ubuntu seeds against a chdist that carries universe quietly
-resolves dependencies into packages that are not there for them.  The result
-is a plausible report that is wrong, which is why a chdist whose components
-do not match is an error rather than a note.
+resolves dependencies into packages that are not there for them.  Doing that
+to the platform collection pulled 12 universe and multiverse packages
+(ipmitool, isc-dhcp-server, amtterm, ...) into its closure and took ``extra``
+from 2124 packages to 7144, without a word said anywhere.  The result is a
+plausible report that is wrong, which is why a chdist whose components do not
+match is an error rather than a note.
 """
 
 # Copyright (C) 2026 Canonical Ltd.
